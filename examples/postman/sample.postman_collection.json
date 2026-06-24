@@ -1,0 +1,70 @@
+{
+  "info": {
+    "name": "Sample API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "EMEA",
+      "item": [
+        {
+          "name": "Authentication",
+          "item": [
+            {
+              "name": "Token (EMEA)",
+              "request": {
+                "method": "POST",
+                "url": {
+                  "raw": "https://{{base-emea}}/token/oauth",
+                  "host": ["{{base-emea}}"],
+                  "path": ["token", "oauth"]
+                },
+                "description": "Get an OAuth token.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"grant_type\":\"client_credentials\"}"
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Screeners",
+          "item": [
+            {
+              "name": "Equities (EMEA)",
+              "request": {
+                "method": "POST",
+                "url": { "raw": "https://{{base-emea}}/v1/screeners/equities" },
+                "body": { "mode": "raw", "raw": "{\"dataPoints\":[]}" }
+              },
+              "response": [
+                { "name": "200 OK", "body": "{\"rows\":[]}" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Americas",
+      "item": [
+        {
+          "name": "Screeners",
+          "item": [
+            {
+              "name": "Equities (Americas)",
+              "request": {
+                "method": "POST",
+                "url": { "raw": "https://{{base-am}}/v1/screeners/equities" },
+                "body": { "mode": "raw", "raw": "{\"dataPoints\":[]}" }
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

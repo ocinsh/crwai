@@ -67,6 +67,34 @@ step-by-step guide in [`internal/lang/TEMPLATE.md`](internal/lang/TEMPLATE.md)
 | `read_struct` | a full struct definition |
 | `write_function` | applies N edits atomically (all-or-nothing) |
 
+## Common-file tools
+
+Beside the language tools there is a separate, small family of **common-file tools**:
+utilities that read non-code documents at a useful granularity. They are deliberately
+**unrelated to the `Language` contract**. They are not routed by file extension through
+the language registry, they do not use tree-sitter, and a file is addressed by its own
+identity (a heading path, a request URL) rather than by code symbol. Each tool is
+selected explicitly, never inferred.
+
+Two readers live under `internal/common/` today, with tests and example fixtures:
+
+- **Markdown** (`internal/common/markdown`): an outline of the heading index (the cheap
+  map), reading one section by heading path (heading plus its nested content), and
+  resolving a section rewrite for the shared atomic write path. It is parsed with a
+  line-oriented block scan, with no CGO and no tree-sitter: a heading is a `#` line
+  outside a fenced code block, and a section spans down to the next heading of
+  equal-or-shallower level.
+- **Postman** (`internal/common/postman`): **read-only**, built to **read the
+  documentation** of a collection export (Collection Format v2.1). It lists endpoints
+  filtered by URL and extracts method, URL, body, and documentation for the requests
+  matching a query, mirroring a pair of personal shell tools it replaces. It was built
+  for personal reasons. Dedicated **Postman MCP servers** already exist for this role;
+  this is a deliberately minimal, read-only alternative, not a general Postman client.
+  It never edits a collection and does not send requests.
+
+Exposing these through the public facade, the MCP tools, and the CLI is the next step;
+the readers and their contracts are in place and covered by tests.
+
 ## Usage
 
 With **no subcommand** the binary speaks MCP over stdio (so an MCP client can
@@ -182,6 +210,7 @@ crwai.go, engine.go, types.go   public library facade (Service/Reader/Writer, En
 internal/core/                  shared types + small interfaces + write-pipeline contract
 internal/mcptool/               tool decorator layer (descriptors, schemas, registration)
 internal/lang/                  per-language subpackages + registry + TEMPLATE.md
+internal/common/                common-file tools (markdown, postman); not Language-bound
 cmd/crwai/                      CLI + MCP server front-ends (cobra commands, stdio)
 cmd/crwai/ui/                   terminal presentation layer (lipgloss styling, icons)
 ```
