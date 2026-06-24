@@ -12,7 +12,7 @@ const (
 )
 
 // The public data types are aliases of their internal-core definitions, so a
-// value produced inside the library and a value named through this façade are the
+// value produced inside the library and a value named through this facade are the
 // exact same type. External consumers use these names; the internal package stays
 // unimportable.
 type (

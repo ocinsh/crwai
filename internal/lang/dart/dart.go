@@ -4,9 +4,12 @@
 // lang/TEMPLATE.md for the recipe).
 //
 // Dart-specific notes:
-//   - Grammar: github.com/UserNobody14/tree-sitter-dart (community-maintained;
-//     see GRAMMAR.md). Its Go binding returns an unsafe.Pointer compatible with
-//     the official github.com/tree-sitter/go-tree-sitter runtime.
+//   - Grammar: github.com/UserNobody14/tree-sitter-dart (community-maintained; no
+//     official Dart grammar exists). Its Go binding returns an unsafe.Pointer
+//     compatible with the official github.com/tree-sitter/go-tree-sitter runtime.
+//     The module is PINNED in go.mod: never run `go mod tidy` (it follows the
+//     longest-prefix match into a broken nested module and fails the build); the
+//     pin is what keeps `go build`/`test`/`run` working.
 //   - Documentation: preceding-sibling `///` doc comments (each `///` line is its
 //     own documentation_comment node); they are joined with newlines.
 //   - SymbolID.Container: the enclosing class name for a method; "" for a

@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/ocinsh/crwai"
 	"github.com/ocinsh/crwai/cmd/crwai/ui"
 )
 
@@ -17,7 +16,11 @@ func newFunctionCmd() *cobra.Command {
 		Short:   ui.IconMethod + " Print a whole function or method (doc, signature, body)",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fn, err := crwai.New().Function(args[0], args[1], container)
+			eng, err := engineFor(cmd)
+			if err != nil {
+				return err
+			}
+			fn, err := eng.Function(args[0], args[1], container)
 			if err != nil {
 				return err
 			}

@@ -33,7 +33,11 @@ func newWriteCmd() *cobra.Command {
 				Target:  crwai.SymbolID{Kind: crwai.ParseKind(kind), Name: name, Container: container},
 				NewText: newText,
 			}
-			res, err := crwai.New().Write(args[0], edit)
+			eng, err := engineFor(cmd)
+			if err != nil {
+				return err
+			}
+			res, err := eng.Write(args[0], edit)
 			if err != nil {
 				return err
 			}

@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/ocinsh/crwai"
 	"github.com/ocinsh/crwai/cmd/crwai/ui"
 )
 
@@ -16,7 +15,11 @@ func newSignaturesCmd() *cobra.Command {
 		Short:   ui.IconFunc + " List the signatures of every top-level symbol in a file",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			sigs, err := crwai.New().ListSignatures(args[0])
+			eng, err := engineFor(cmd)
+			if err != nil {
+				return err
+			}
+			sigs, err := eng.ListSignatures(args[0])
 			if err != nil {
 				return err
 			}

@@ -15,6 +15,7 @@ import "github.com/ocinsh/crwai/internal/core"
 
 type ListSignaturesIn struct {
 	Path string `json:"path" jsonschema:"path to the source file to scan"`
+	Lang string `json:"lang,omitempty" jsonschema:"force a language by name (e.g. cpp), overriding file-extension detection; omit to detect from the extension"`
 }
 
 type ListSignaturesOut struct {
@@ -27,6 +28,7 @@ type GetFunctionBodyIn struct {
 	Path      string `json:"path" jsonschema:"path to the source file"`
 	Name      string `json:"name" jsonschema:"name of the function or method"`
 	Container string `json:"container,omitempty" jsonschema:"enclosing receiver/class for a method; empty for a top-level function"`
+	Lang      string `json:"lang,omitempty" jsonschema:"force a language by name (e.g. cpp), overriding file-extension detection; omit to detect from the extension"`
 }
 
 type GetFunctionBodyOut struct {
@@ -39,6 +41,7 @@ type GetFunctionIn struct {
 	Path      string `json:"path" jsonschema:"path to the source file"`
 	Name      string `json:"name" jsonschema:"name of the function or method"`
 	Container string `json:"container,omitempty" jsonschema:"enclosing receiver/class for a method; empty for a top-level function"`
+	Lang      string `json:"lang,omitempty" jsonschema:"force a language by name (e.g. cpp), overriding file-extension detection; omit to detect from the extension"`
 }
 
 type GetFunctionOut struct {
@@ -50,6 +53,7 @@ type GetFunctionOut struct {
 type ReadInterfaceIn struct {
 	Path string `json:"path" jsonschema:"path to the source file"`
 	Name string `json:"name" jsonschema:"name of the interface/protocol/trait"`
+	Lang string `json:"lang,omitempty" jsonschema:"force a language by name (e.g. cpp), overriding file-extension detection; omit to detect from the extension"`
 }
 
 type ReadInterfaceOut struct {
@@ -61,6 +65,7 @@ type ReadInterfaceOut struct {
 type ReadStructIn struct {
 	Path string `json:"path" jsonschema:"path to the source file"`
 	Name string `json:"name" jsonschema:"name of the struct/class/record"`
+	Lang string `json:"lang,omitempty" jsonschema:"force a language by name (e.g. cpp), overriding file-extension detection; omit to detect from the extension"`
 }
 
 type ReadStructOut struct {
@@ -82,6 +87,7 @@ type EditIn struct {
 type WriteFunctionIn struct {
 	Path  string   `json:"path" jsonschema:"path to the source file to modify"`
 	Edits []EditIn `json:"edits" jsonschema:"one or more edits applied atomically (all-or-nothing) in a single call"`
+	Lang  string   `json:"lang,omitempty" jsonschema:"force a language by name (e.g. cpp), overriding file-extension detection; omit to detect from the extension"`
 }
 
 type WriteFunctionOut struct {

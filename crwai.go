@@ -3,12 +3,12 @@
 // a single symbol — a function, method, interface, or struct — addressed by its
 // identity (name, kind, and optional container) rather than by byte offsets.
 //
-// This root package is a thin, stable façade. All of the implementation — the
+// This root package is a thin, stable facade. All of the implementation — the
 // parse pipeline, the per-language tree-sitter logic, the symbol resolution, and
 // the all-or-nothing write engine — lives under internal/ and is intentionally
 // not importable by other modules. Consumers depend only on the interfaces and
 // types declared here; the two front-ends shipped in this repository (the CLI and
-// the MCP server under cmd/crwai) are themselves just clients of this façade.
+// the MCP server under cmd/crwai) are themselves just clients of this facade.
 //
 // The entry point is New, which returns an *Engine implementing Service:
 //

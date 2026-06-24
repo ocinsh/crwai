@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/ocinsh/crwai"
 	"github.com/ocinsh/crwai/cmd/crwai/ui"
 )
 
@@ -17,7 +16,11 @@ func newBodyCmd() *cobra.Command {
 		Short:   ui.IconFunc + " Print only the body of a function or method",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := crwai.New().FunctionBody(args[0], args[1], container)
+			eng, err := engineFor(cmd)
+			if err != nil {
+				return err
+			}
+			body, err := eng.FunctionBody(args[0], args[1], container)
 			if err != nil {
 				return err
 			}

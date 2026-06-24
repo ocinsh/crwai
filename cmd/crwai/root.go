@@ -29,6 +29,9 @@ func newRoot() *cobra.Command {
 		},
 	}
 
+	root.PersistentFlags().StringP("lang", "l", "",
+		"force a language by name (overrides file-extension detection); see the `langs` command")
+
 	root.AddCommand(
 		newServeCmd(),
 		newSignaturesCmd(),
@@ -41,6 +44,18 @@ func newRoot() *cobra.Command {
 		newVersionCmd(),
 	)
 	return root
+}
+
+// engineFor builds the engine for a command, applying the global --lang override
+// when set. With --lang empty the engine resolves a file's language by extension;
+// an unknown language name returns crwai.ErrUnsupportedLanguage.
+func engineFor(cmd *cobra.Command) (*crwai.Engine, error) {
+	eng := crwai.New()
+	name, _ := cmd.Flags().GetString("lang")
+	if name == "" {
+		return eng, nil
+	}
+	return eng.Lang(name)
 }
 
 // newVersionCmd prints the product version (the same crwai.Version constant the

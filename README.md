@@ -49,8 +49,12 @@ syntax breaks. It never generates code.
 ## Target languages
 
 Go, Rust, Dart, Python, TypeScript, JavaScript, Java, C, C++. The agent picks the
-reference language per call (resolved from the file extension). Each language lives
-in its own subpackage under `internal/lang/` and implements the common interfaces.
+reference language per call (resolved from the file extension, or forced with the
+`--lang` flag / the tools' `lang` field — useful for an ambiguous extension such as
+a C++ header named `.h`). Each language lives in its own subpackage under
+`internal/lang/` and implements the common interfaces. To add one, follow the
+step-by-step guide in [`internal/lang/TEMPLATE.md`](internal/lang/TEMPLATE.md)
+(Go is the worked reference implementation).
 
 ## v1 tools
 
@@ -81,11 +85,16 @@ crwai write <file> -n <name> -k <kind> -t <text>   # surgical edit (alias: wr)
 crwai version              # product version
 ```
 
+Every read/write subcommand also accepts a global `--lang`/`-l <name>` flag that
+forces the language by name (see `crwai langs`) instead of detecting it from the
+file extension — e.g. `crwai sig -l cpp widget.h` to parse a `.h` header as C++.
+The MCP tools expose the same override through an optional `lang` field.
+
 ## Library
 
 The same capabilities are exposed as a Go library through the root package
 (`github.com/ocinsh/crwai`). The implementation lives under `internal/` and is not
-importable from other modules; consumers depend only on the public façade:
+importable from other modules; consumers depend only on the public facade:
 
 ```go
 svc := crwai.New()                              // *Engine, implements crwai.Service
@@ -121,16 +130,16 @@ has no `interface` construct (and no method container): `read_interface` reports
 `core.ErrSymbolNotFound`, and symbols sharing a name are disambiguated by kind
 (e.g. `struct list` vs the function `list`). Dart has no distinct interface
 declaration, so `read_struct` maps to a concrete class and `read_interface` to an
-`abstract` class; its community grammar is pinned and `go mod tidy` must be avoided
-(see `internal/lang/dart/GRAMMAR.md`). TypeScript ships as **two** grammars from the
+`abstract` class; its community grammar is pinned in `go.mod` and `go mod tidy` must
+be avoided (it would pull a broken nested module; see the `dart.go` header).
+TypeScript ships as **two** grammars from the
 same `tree-sitter-typescript` module: it registers as two languages — `typescript`
 for `.ts` (pure grammar) and `tsx` for `.tsx` (JSX-aware grammar) — sharing one
 implementation; `read_interface` reads a real `interface`, `read_struct` reads a
 `class` or an object-typed `type` alias, and namespace/module functions are
-addressed by `Container`. The
-remaining language subpackages still carry contract comments and return
-`core.ErrNotImplemented` until their grammar is wired (see `internal/lang/TEMPLATE.md`).
-Building requires a C toolchain — never `CGO_ENABLED=0`.
+addressed by `Container`. All nine target languages are implemented; adding a new
+one follows [`internal/lang/TEMPLATE.md`](internal/lang/TEMPLATE.md), with Go as the
+reference. Building requires a C toolchain — never `CGO_ENABLED=0`.
 
 Try it on the bundled corpus:
 
@@ -169,7 +178,7 @@ bash internal/lang/dart/script.sh                     # Dart end-to-end (unit + 
 ## Layout
 
 ```
-crwai.go, engine.go, types.go   public library façade (Service/Reader/Writer, Engine, types)
+crwai.go, engine.go, types.go   public library facade (Service/Reader/Writer, Engine, types)
 internal/core/                  shared types + small interfaces + write-pipeline contract
 internal/mcptool/               tool decorator layer (descriptors, schemas, registration)
 internal/lang/                  per-language subpackages + registry + TEMPLATE.md
@@ -178,5 +187,5 @@ cmd/crwai/ui/                   terminal presentation layer (lipgloss styling, i
 ```
 
 The dependency direction is one-way: `cmd/crwai` (and its `ui`) depend on the
-public root package; the root façade depends on `internal/`; nothing depends back
+public root package; the root facade depends on `internal/`; nothing depends back
 outward.

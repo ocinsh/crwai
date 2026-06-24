@@ -17,11 +17,15 @@ import (
 )
 
 // Engine is the canonical Service implementation: it owns the language registry
-// and resolves each call's language by file extension. It holds no per-call state
-// — every method re-parses the file from disk — so a single Engine is safe for
-// concurrent use and a package-level instance is fine.
+// and resolves each call's language by file extension (or by a language forced
+// via Lang). It holds no per-call state — every method re-parses the file from
+// disk — so a single Engine is safe for concurrent use and a package-level
+// instance is fine.
 type Engine struct {
 	reg *lang.Registry
+	// forced, when non-nil, is the language every call uses instead of resolving
+	// by file extension. Set only through Lang, which returns a copy.
+	forced core.Language
 }
 
 // Compile-time assertion that Engine implements the full public surface.
@@ -43,6 +47,23 @@ func New() *Engine {
 	reg.Register(c.C{})
 	reg.Register(cpp.Cpp{})
 	return &Engine{reg: reg}
+}
+
+// Lang returns a view of the Engine that forces every subsequent call to use the
+// named language, bypassing file-extension detection. It is the override for files
+// whose extension is ambiguous (a C++ header named .h, which resolves to C by
+// extension) or absent. The name is matched case-insensitively against the
+// registered languages (see Languages); an unknown name yields
+// ErrUnsupportedLanguage. The receiver is left unchanged, so extension-based
+// resolution stays available through the original Engine.
+func (e *Engine) Lang(name string) (*Engine, error) {
+	l, ok := e.reg.ByName(name)
+	if !ok {
+		return nil, ErrUnsupportedLanguage
+	}
+	cp := *e
+	cp.forced = l
+	return &cp, nil
 }
 
 // Languages reports the registered languages, sorted by name.
@@ -109,7 +130,7 @@ func (e *Engine) Struct(path, name string) (string, error) {
 // extension and delegates to the all-or-nothing core pipeline, which validates
 // the re-parse and persists only if every edit lands.
 func (e *Engine) Write(path string, edits ...Edit) (WriteResult, error) {
-	l, ok := e.reg.ByExtension(path)
+	l, ok := e.langFor(path)
 	if !ok {
 		return WriteResult{Path: path}, ErrUnsupportedLanguage
 	}
@@ -119,7 +140,7 @@ func (e *Engine) Write(path string, edits ...Edit) (WriteResult, error) {
 // open resolves the language for path and parses the file into a Source. The
 // caller must Close the returned Source.
 func (e *Engine) open(path string) (core.Language, core.Source, error) {
-	l, ok := e.reg.ByExtension(path)
+	l, ok := e.langFor(path)
 	if !ok {
 		return nil, nil, ErrUnsupportedLanguage
 	}
@@ -132,6 +153,15 @@ func (e *Engine) open(path string) (core.Language, core.Source, error) {
 		return nil, nil, err
 	}
 	return l, src, nil
+}
+
+// langFor resolves the language for path: the language forced by Lang when set,
+// otherwise the registered language for the file's extension.
+func (e *Engine) langFor(path string) (core.Language, bool) {
+	if e.forced != nil {
+		return e.forced, true
+	}
+	return e.reg.ByExtension(path)
 }
 
 // funcID builds a SymbolID for a function/method: a non-empty container marks it
