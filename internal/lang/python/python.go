@@ -19,6 +19,7 @@ package python
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ocinsh/crwai/internal/core"
 	ts "github.com/tree-sitter/go-tree-sitter"
@@ -73,7 +74,17 @@ func (Python) ListSignatures(src core.Source) ([]core.Signature, error) {
 	syms := collect(src)
 	out := make([]core.Signature, 0, len(syms))
 	for _, s := range syms {
-		out = append(out, signatureOf(s.node, bytes))
+		sig := signatureOf(s.node, bytes)
+		sig.Kind = s.id.Kind
+		sig.Container = s.id.Container
+		// Callables carry a verbatim signature line (`def name(params) -> ret:`),
+		// up to but not including the body suite; classes fall back to the name.
+		if s.id.Kind == core.KindFunc || s.id.Kind == core.KindMethod {
+			if body := s.node.ChildByFieldName(fieldBody); body != nil {
+				sig.Text = strings.TrimSpace(string(bytes[s.node.StartByte():body.StartByte()]))
+			}
+		}
+		out = append(out, sig)
 	}
 	return out, nil
 }

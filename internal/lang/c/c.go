@@ -58,12 +58,15 @@ func (c C) ListSignatures(src core.Source) ([]core.Signature, error) {
 	syms := c.symbols(src)
 	out := make([]core.Signature, 0, len(syms))
 	for _, s := range syms {
-		sig := core.Signature{Name: s.id.Name, Doc: s.doc}
+		sig := core.Signature{Kind: s.id.Kind, Name: s.id.Name, Container: s.id.Container, Doc: s.doc}
 		if s.id.Kind == core.KindFunc {
 			fd := functionDeclarator(s.node.ChildByFieldName("declarator"))
 			sig.Params = params(fd, b)
-			if t := s.node.ChildByFieldName("type"); t != nil {
-				sig.Returns = strings.TrimSpace(t.Utf8Text(b))
+			sig.Returns = returnType(s.node, b)
+			// Verbatim signature: the function_definition up to its body, so the
+			// full return type (pointer included) and parameters read as written.
+			if body := s.node.ChildByFieldName("body"); body != nil {
+				sig.Text = strings.TrimSpace(string(b[s.node.StartByte():body.StartByte()]))
 			}
 		}
 		out = append(out, sig)
@@ -208,6 +211,35 @@ func (c C) find(src core.Source, kind core.SymbolKind, name string) (symbol, boo
 		}
 	}
 	return symbol{}, false
+}
+
+// returnType renders a function's return type, recovering the pointer levels that
+// C parks on the declarator rather than on the `type` field. For
+// `struct list *list(void)` the `type` field is just `struct list` while the `*`
+// sits on the pointer_declarator wrapping the function_declarator; reading the
+// type field alone would silently drop the pointer from the listed signature.
+func returnType(fn *sitter.Node, b []byte) string {
+	t := fn.ChildByFieldName("type")
+	if t == nil {
+		return ""
+	}
+	ret := strings.TrimSpace(t.Utf8Text(b))
+	stars := 0
+	for decl := fn.ChildByFieldName("declarator"); decl != nil; {
+		switch decl.Kind() {
+		case "pointer_declarator":
+			stars++
+			decl = decl.ChildByFieldName("declarator")
+		case "parenthesized_declarator":
+			decl = decl.ChildByFieldName("declarator")
+		default:
+			decl = nil
+		}
+	}
+	if stars > 0 {
+		ret += " " + strings.Repeat("*", stars)
+	}
+	return ret
 }
 
 // functionDeclarator descends through pointer/parenthesized declarators to reach

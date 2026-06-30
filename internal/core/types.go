@@ -10,36 +10,31 @@
 package core
 
 // SymbolKind enumerates the kinds of symbols the server can address. It is an
-// open enum: new kinds (e.g. enum, trait, type-alias) may be appended without
-// breaking existing callers.
-type SymbolKind int
+// open enum backed by a string so it is self-describing on the MCP wire (the
+// inferred JSON schema is a plain "string" and the value marshals to "func",
+// "method", … with no extra code); new kinds may be appended without breaking
+// existing callers.
+type SymbolKind string
 
 const (
 	// KindFunc is a free/top-level function (no receiver, no enclosing type).
-	KindFunc SymbolKind = iota
+	KindFunc SymbolKind = "func"
 	// KindMethod is a function bound to a receiver / enclosing type
 	// (Go method, Rust impl method, Java/Python class method).
-	KindMethod
+	KindMethod SymbolKind = "method"
 	// KindInterface is an interface / protocol / trait declaration.
-	KindInterface
+	KindInterface SymbolKind = "interface"
 	// KindStruct is a struct / class / record declaration.
-	KindStruct
+	KindStruct SymbolKind = "struct"
 )
 
-// String renders a SymbolKind for diagnostics and tool output.
+// String renders a SymbolKind for diagnostics and tool output. The value already
+// is its label; the only special case is the empty zero value.
 func (k SymbolKind) String() string {
-	switch k {
-	case KindFunc:
-		return "func"
-	case KindMethod:
-		return "method"
-	case KindInterface:
-		return "interface"
-	case KindStruct:
-		return "struct"
-	default:
+	if k == "" {
 		return "unknown"
 	}
+	return string(k)
 }
 
 // SymbolID is the unique symbolic identity of a symbol — the ONLY key used to
@@ -81,9 +76,27 @@ type Symbol struct {
 // Signature is the "light" form of a symbol that the agent reads by default:
 // enough to understand and call the symbol without loading its body.
 type Signature struct {
+	// Kind labels the symbol (func/method/interface/struct) so the cheap listing
+	// is enough to discover not just a symbol's name but which reader to call for
+	// it (read_struct vs read_interface vs get_function) and to disambiguate
+	// same-named symbols that differ only by kind (e.g. C's `struct list` vs the
+	// free function `list`).
+	Kind SymbolKind
 	// Name is the declared identifier.
 	Name string
-	// Params are the textual parameter declarations, in order.
+	// Container scopes the symbol within an enclosing entity (the receiver type for
+	// a method, the enclosing class/impl), "" for a top-level symbol. It is the
+	// machine-readable companion to Text: it tells an agent which struct a method
+	// is bound to without parsing the signature line.
+	Container string
+	// Text is the verbatim signature line as it appears in source — keyword,
+	// receiver, type parameters, parameters and return type, with no body (e.g.
+	// "func (s *Stack[T]) Len() int"). It is set for callable symbols
+	// (func/method); for interfaces/structs it is empty and callers fall back to
+	// Name. This is the faithful form the listing displays.
+	Text string
+	// Params are the textual parameter declarations, in order. They remain as a
+	// structured, machine-readable companion to Text.
 	Params []string
 	// Returns is the textual return type / return list ("" if none).
 	Returns string

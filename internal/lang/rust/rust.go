@@ -60,13 +60,31 @@ func (Rust) ListSignatures(src core.Source) ([]core.Signature, error) {
 	out := make([]core.Signature, 0, len(syms))
 	for _, s := range syms {
 		out = append(out, core.Signature{
-			Name:    s.id.Name,
-			Params:  params(s.node, b),
-			Returns: fieldText(s.node, "return_type", b),
-			Doc:     docText(s.node, b),
+			Kind:      s.id.Kind,
+			Name:      s.id.Name,
+			Container: s.id.Container,
+			Text:      signatureText(s.id.Kind, s.node, b),
+			Params:    params(s.node, b),
+			Returns:   fieldText(s.node, "return_type", b),
+			Doc:       docText(s.node, b),
 		})
 	}
 	return out, nil
+}
+
+// signatureText returns the verbatim signature line of a callable symbol: the
+// source from the function_item start up to (but not including) its body block,
+// so generic parameters, where-clause and return type are preserved exactly. A
+// body-less trait method declaration yields its whole text; structs and traits
+// yield "".
+func signatureText(kind core.SymbolKind, node *ts.Node, b []byte) string {
+	if kind != core.KindFunc && kind != core.KindMethod {
+		return ""
+	}
+	if body := node.ChildByFieldName("body"); body != nil {
+		return strings.TrimSpace(string(b[node.StartByte():body.StartByte()]))
+	}
+	return strings.TrimRight(strings.TrimSpace(node.Utf8Text(b)), " \t\n;")
 }
 
 // FunctionBody returns only the block (braces included) of the function or method

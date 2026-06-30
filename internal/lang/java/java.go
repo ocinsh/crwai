@@ -85,9 +85,17 @@ func (Java) ListSignatures(src core.Source) ([]core.Signature, error) {
 	walk(src.Root(), func(n *ts.Node) {
 		switch n.Kind() {
 		case kindMethod, kindConstructor:
-			out = append(out, methodSignature(n, source))
-		case kindClass, kindInterface, kindRecord, kindEnum:
-			out = append(out, typeSignature(n, source))
+			sig := methodSignature(n, source)
+			sig.Kind = core.KindMethod
+			out = append(out, sig)
+		case kindInterface:
+			sig := typeSignature(n, source)
+			sig.Kind = core.KindInterface
+			out = append(out, sig)
+		case kindClass, kindRecord, kindEnum:
+			sig := typeSignature(n, source)
+			sig.Kind = core.KindStruct
+			out = append(out, sig)
 		}
 	})
 	return out, nil
@@ -277,8 +285,16 @@ func methodBody(n *ts.Node) *ts.Node {
 // each formal parameter's text, the return type (if any), and preceding doc.
 func methodSignature(n *ts.Node, source []byte) core.Signature {
 	sig := core.Signature{
-		Name: nodeName(n, source),
-		Doc:  precedingDoc(n, source),
+		Name:      nodeName(n, source),
+		Container: enclosingTypeName(n, source),
+		Doc:       precedingDoc(n, source),
+	}
+	// Verbatim signature: modifiers, return type, name and parameters up to the
+	// body (an abstract/interface method has no body and yields its whole text).
+	if body := n.ChildByFieldName("body"); body != nil {
+		sig.Text = strings.TrimSpace(string(source[n.StartByte():body.StartByte()]))
+	} else {
+		sig.Text = strings.TrimSpace(strings.TrimSuffix(n.Utf8Text(source), ";"))
 	}
 	if params := n.ChildByFieldName("parameters"); params != nil {
 		pc := params.NamedChildCount()

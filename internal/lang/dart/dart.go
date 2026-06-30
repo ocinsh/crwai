@@ -94,11 +94,20 @@ func (d Dart) ListSignatures(src core.Source) ([]core.Signature, error) {
 			continue // only top-level functions
 		}
 		doc, _ := leadingDoc(f.anchor, bytes)
+		// The function_signature node is itself the verbatim signature line
+		// (return type, name, type parameters and parameters; no body).
+		text := ""
+		if f.sig != nil {
+			text = strings.TrimSpace(f.sig.Utf8Text(bytes))
+		}
 		entries = append(entries, entry{f.anchor.StartByte(), core.Signature{
-			Name:    f.name,
-			Params:  paramsOf(f.sig, bytes),
-			Returns: returnsOf(f.sig, bytes),
-			Doc:     doc,
+			Kind:      core.KindFunc,
+			Name:      f.name,
+			Container: f.container,
+			Text:      text,
+			Params:    paramsOf(f.sig, bytes),
+			Returns:   returnsOf(f.sig, bytes),
+			Doc:       doc,
 		}})
 	}
 
@@ -111,7 +120,13 @@ func (d Dart) ListSignatures(src core.Source) ([]core.Signature, error) {
 			continue
 		}
 		doc, _ := leadingDoc(c.node, bytes)
-		entries = append(entries, entry{c.node.StartByte(), core.Signature{Name: c.name, Doc: doc}})
+		// Dart has no distinct interface construct: an abstract/interface class is
+		// read via ReadInterface, a concrete one via ReadStruct — mirror that here.
+		kind := core.KindStruct
+		if c.abstract {
+			kind = core.KindInterface
+		}
+		entries = append(entries, entry{c.node.StartByte(), core.Signature{Kind: kind, Name: c.name, Doc: doc}})
 	}
 
 	sort.Slice(entries, func(i, j int) bool { return entries[i].start < entries[j].start })

@@ -84,17 +84,38 @@ func (TSX) Parse(src []byte) (core.Source, error) {
 // parameters, return-type annotation, and contiguous preceding-comment doc.
 // Results are in source order so the output is deterministic.
 func (TypeScript) ListSignatures(src core.Source) ([]core.Signature, error) {
-	syms := collect(src.Root(), src.Bytes())
+	b := src.Bytes()
+	syms := collect(src.Root(), b)
 	out := make([]core.Signature, 0, len(syms))
 	for _, s := range syms {
 		out = append(out, core.Signature{
-			Name:    s.id.Name,
-			Params:  s.params,
-			Returns: s.returns,
-			Doc:     s.doc,
+			Kind:      s.id.Kind,
+			Name:      s.id.Name,
+			Container: s.id.Container,
+			Text:      signatureText(s, b),
+			Params:    s.params,
+			Returns:   s.returns,
+			Doc:       s.doc,
 		})
 	}
 	return out, nil
+}
+
+// signatureText returns the verbatim signature line of a callable symbol: the
+// source from the declaration start up to (but not including) its body, keeping
+// the name, type parameters, parameters and return annotation as written.
+// Classes, interfaces and body-less symbols yield "".
+func signatureText(s sym, b []byte) string {
+	if s.text == nil || s.id.Kind == core.KindStruct || s.id.Kind == core.KindInterface {
+		return ""
+	}
+	// With a body, slice up to it; a body-less method signature (interface/abstract)
+	// is the whole node, minus its trailing semicolon.
+	end := s.text.EndByte()
+	if s.body != nil {
+		end = s.body.StartByte()
+	}
+	return strings.TrimRight(strings.TrimSpace(string(b[s.text.StartByte():end])), " \t\n;")
 }
 
 // FunctionBody locates the function/method matching id and returns the text of its

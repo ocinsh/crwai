@@ -94,26 +94,38 @@ func (Go) ListSignatures(src core.Source) ([]core.Signature, error) {
 		if !ok {
 			return
 		}
+		kind := core.KindFunc
 		decl, ok := caps["func"]
 		if !ok {
 			decl, ok = caps["method"]
 			if !ok {
 				return
 			}
+			kind = core.KindMethod
+		}
+		container := ""
+		if recv, hasRecv := caps["receiver"]; hasRecv {
+			container = receiverType(recv, b)
 		}
 		add(decl.StartByte(), core.Signature{
-			Name:    name.Utf8Text(b),
-			Params:  paramsOf(decl, b),
-			Returns: returnsOf(decl, b),
-			Doc:     docOf(decl, b),
+			Kind:      kind,
+			Name:      name.Utf8Text(b),
+			Container: container,
+			Text:      signatureText(decl, b),
+			Params:    paramsOf(decl, b),
+			Returns:   returnsOf(decl, b),
+			Doc:       docOf(decl, b),
 		})
 	}); err != nil {
 		return nil, err
 	}
 
-	for _, qt := range []struct{ query, capture string }{
-		{queryInterfaces, "iface"},
-		{queryStructs, "struct"},
+	for _, qt := range []struct {
+		query, capture string
+		kind           core.SymbolKind
+	}{
+		{queryInterfaces, "iface", core.KindInterface},
+		{queryStructs, "struct", core.KindStruct},
 	} {
 		if err := runQuery(src, qt.query, func(q *ts.Query, m *ts.QueryMatch) {
 			caps := captures(q, m)
@@ -125,7 +137,7 @@ func (Go) ListSignatures(src core.Source) ([]core.Signature, error) {
 			if !ok {
 				return
 			}
-			add(decl.StartByte(), core.Signature{Name: name.Utf8Text(b), Doc: docOf(decl, b)})
+			add(decl.StartByte(), core.Signature{Kind: qt.kind, Name: name.Utf8Text(b), Doc: docOf(decl, b)})
 		}); err != nil {
 			return nil, err
 		}
@@ -350,6 +362,18 @@ func receiverType(recv ts.Node, src []byte) string {
 		t = t[:i]
 	}
 	return strings.TrimSpace(t)
+}
+
+// signatureText returns the verbatim signature line of a function/method: the
+// source from the declaration start up to (but not including) the body block, so
+// the receiver, type parameters and return type are preserved exactly as written
+// (e.g. "func (s *Stack[T]) Len() int"). When no body is present the whole
+// declaration text is returned, trimmed.
+func signatureText(decl ts.Node, src []byte) string {
+	if body := decl.ChildByFieldName("body"); body != nil {
+		return strings.TrimSpace(string(src[decl.StartByte():body.StartByte()]))
+	}
+	return strings.TrimSpace(decl.Utf8Text(src))
 }
 
 // paramsOf returns the textual parameter declarations of a function/method, in

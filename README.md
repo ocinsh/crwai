@@ -60,7 +60,7 @@ step-by-step guide in [`internal/lang/TEMPLATE.md`](internal/lang/TEMPLATE.md)
 
 | Tool | Returns |
 | --- | --- |
-| `list_signatures` | signatures of every top-level symbol (the cheap map) |
+| `list_signatures` | signatures of every top-level symbol, each labelled with its kind and (for callables) its verbatim signature line — receiver and type parameters included — plus the owning container (the cheap map) |
 | `get_function_body` | a function's body only |
 | `get_function` | a whole function: doc + signature + body |
 | `read_interface` | a full interface definition |

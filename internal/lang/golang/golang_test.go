@@ -118,6 +118,53 @@ func TestListSignaturesBigCountAndOrder(t *testing.T) {
 	}
 }
 
+// TestListSignaturesKind verifies the cheap listing labels each symbol with its
+// kind, so a caller can tell a struct/interface from a function without already
+// knowing which it is.
+func TestListSignaturesKind(t *testing.T) {
+	src := parse(t, example(t, "types.go"))
+	sigs, err := Go{}.ListSignatures(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]core.SymbolKind{}
+	for _, s := range sigs {
+		kinds[s.Name] = s.Kind
+	}
+	for name, want := range map[string]core.SymbolKind{
+		"Point":    core.KindStruct,
+		"Shape":    core.KindInterface,
+		"Stringer": core.KindInterface,
+	} {
+		if got, ok := kinds[name]; !ok {
+			t.Errorf("missing signature %q", name)
+		} else if got != want {
+			t.Errorf("%s kind = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// TestListSignaturesVerbatim checks that callables carry the full verbatim
+// signature line (receiver and type parameters included) and the machine-readable
+// Container, so a method is never mistaken for a free function.
+func TestListSignaturesVerbatim(t *testing.T) {
+	src := parse(t, example(t, "generics.go"))
+	sigs, err := Go{}.ListSignatures(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]core.Signature{}
+	for _, s := range sigs {
+		byName[s.Name] = s
+	}
+	if got := byName["Len"]; got.Text != "func (s *Stack[T]) Len() int" || got.Container != "Stack" {
+		t.Errorf("Len: Text=%q Container=%q, want the full receiver signature bound to Stack", got.Text, got.Container)
+	}
+	if got := byName["MapSlice"]; got.Text != "func MapSlice[T any, U any](in []T, f func(T) U) []U" || got.Container != "" {
+		t.Errorf("MapSlice: Text=%q Container=%q, want the type-parameter signature with no container", got.Text, got.Container)
+	}
+}
+
 // TestFunctionAndBody checks full-function and body-only extraction.
 func TestFunctionAndBody(t *testing.T) {
 	src := parse(t, example(t, "basic.go"))

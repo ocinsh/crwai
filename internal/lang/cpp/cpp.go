@@ -287,10 +287,14 @@ func mkType(spec, whole *sitter.Node, b []byte) symbol {
 // signatureOf renders the "light" signature of a symbol: declared name, textual
 // parameters and return type for callables, and the contiguous doc comment.
 func (c Cpp) signatureOf(s symbol, b []byte) core.Signature {
-	sig := core.Signature{Name: s.id.Name, Doc: docText(s, b)}
+	sig := core.Signature{Kind: s.id.Kind, Name: s.id.Name, Container: s.id.Container, Doc: docText(s, b)}
 	if s.body == nil {
 		return sig // a type has no params/returns
 	}
+	// Verbatim signature: the function_definition up to its body, so the return
+	// type, qualified name and parameters read exactly as written.
+	def := s.body.Parent()
+	sig.Text = strings.TrimSpace(string(b[def.StartByte():s.body.StartByte()]))
 	if decl := unwrapDeclarator(s.body.Parent().ChildByFieldName("declarator")); decl != nil {
 		if params := decl.ChildByFieldName("parameters"); params != nil {
 			pc := params.NamedChildCount()

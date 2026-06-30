@@ -203,6 +203,44 @@ func TestDisambiguation(t *testing.T) {
 	if st == fn {
 		t.Error("struct and function with the same name resolved to identical text")
 	}
+
+	// The cheap listing must carry the kind too, otherwise the same-named struct
+	// and function are indistinguishable in the map a caller browses first.
+	sigs, err := C{}.ListSignatures(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kinds []core.SymbolKind
+	for _, s := range sigs {
+		if s.Name == "list" {
+			kinds = append(kinds, s.Kind)
+		}
+	}
+	if len(kinds) != 2 {
+		t.Fatalf("want two `list` signatures, got %d", len(kinds))
+	}
+	hasStruct, hasFunc := false, false
+	for _, k := range kinds {
+		switch k {
+		case core.KindStruct:
+			hasStruct = true
+		case core.KindFunc:
+			hasFunc = true
+		}
+	}
+	if !hasStruct || !hasFunc {
+		t.Errorf("listing kinds for `list` = %v, want one struct and one func", kinds)
+	}
+
+	// The pointer level lives on the declarator, not the `type` field; the
+	// listed return type must still spell it (`struct list *`, not `struct list`).
+	for _, s := range sigs {
+		if s.Name == "list" && s.Kind == core.KindFunc {
+			if !strings.Contains(s.Returns, "*") {
+				t.Errorf("func list returns = %q, want a pointer (`*`)", s.Returns)
+			}
+		}
+	}
 }
 
 func TestResolveEditsRelativeRange(t *testing.T) {

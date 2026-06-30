@@ -53,17 +53,36 @@ func (JavaScript) Parse(src []byte) (core.Source, error) {
 // methods, and classes), attaching contiguous preceding-comment docs. No bodies
 // are loaded beyond what the signature needs.
 func (JavaScript) ListSignatures(src core.Source) ([]core.Signature, error) {
-	syms := collect(src.Root(), src.Bytes())
+	b := src.Bytes()
+	syms := collect(src.Root(), b)
 	out := make([]core.Signature, 0, len(syms))
 	for _, s := range syms {
 		out = append(out, core.Signature{
-			Name:    s.id.Name,
-			Params:  s.params,
-			Returns: "", // plain JavaScript carries no return-type annotations
-			Doc:     s.doc,
+			Kind:      s.id.Kind,
+			Name:      s.id.Name,
+			Container: s.id.Container,
+			Text:      signatureText(s, b),
+			Params:    s.params,
+			Returns:   "", // plain JavaScript carries no return-type annotations
+			Doc:       s.doc,
 		})
 	}
 	return out, nil
+}
+
+// signatureText returns the verbatim signature line of a callable symbol: the
+// source from the declaration start up to (but not including) its body, so the
+// name, parameters and any receiver are kept exactly as written. Classes and
+// body-less symbols have no such line and yield "".
+func signatureText(s sym, b []byte) string {
+	if s.text == nil || s.id.Kind == core.KindStruct || s.id.Kind == core.KindInterface {
+		return ""
+	}
+	end := s.text.EndByte()
+	if s.body != nil {
+		end = s.body.StartByte()
+	}
+	return strings.TrimRight(strings.TrimSpace(string(b[s.text.StartByte():end])), " \t\n;")
 }
 
 // FunctionBody locates the function/method matching id and returns the text of its
