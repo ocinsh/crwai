@@ -110,7 +110,8 @@ out="$("$BIN" langs 2>&1)"
 echo "$out" | grep -q 'java' && ok "cli langs lists java" || bad "cli langs lists java" "$out"
 
 out="$("$BIN" sig "$WORK/java/Catalog.java" 2>&1)"
-n="$(echo "$out" | grep -c '🔧')"
+# one tree branch (├─ or └─) per listed symbol; no emoji in the CLI any more.
+n="$(echo "$out" | grep -cE '^(├─|└─)')"
 [ "$n" -ge 20 ] && ok "cli signatures Catalog (>=20 symbols, got $n)" \
   || bad "cli signatures Catalog" "expected >=20, got $n"
 

@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/ocinsh/crwai"
 	"github.com/ocinsh/crwai/cmd/crwai/ui"
 )
 
@@ -11,7 +12,7 @@ func newStructCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "struct <file> <name>",
 		Aliases: []string{"st"},
-		Short:   ui.IconStruct + " Print the full definition of a struct/class/record",
+		Short:   "Print the full definition of a struct/class/record",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := engineFor(cmd)
@@ -22,8 +23,7 @@ func newStructCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Println(ui.Heading(ui.IconStruct, args[1]))
-			cmd.Println(def)
+			cmd.Println(ui.Symbol(args[0], crwai.KindStruct, args[1], def))
 			return nil
 		},
 	}

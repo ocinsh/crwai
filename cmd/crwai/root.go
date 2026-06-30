@@ -64,10 +64,10 @@ func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "version",
 		Aliases: []string{"ver"},
-		Short:   ui.IconServer + " Print the product version",
+		Short:   "Print the product version",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cmd.Println(ui.Heading(ui.IconServer, crwai.Name+" "+crwai.Version))
+			cmd.Println(ui.Version(crwai.Name, crwai.Version))
 			return nil
 		},
 	}

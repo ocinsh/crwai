@@ -12,7 +12,7 @@ func newSignaturesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "signatures <file>",
 		Aliases: []string{"sig", "ls"},
-		Short:   ui.IconFunc + " List the signatures of every top-level symbol in a file",
+		Short:   "List the signatures of every top-level symbol in a file",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := engineFor(cmd)
@@ -23,10 +23,11 @@ func newSignaturesCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Println(ui.Heading(ui.IconFunc, args[0]))
-			for _, s := range sigs {
-				cmd.Println(ui.Signature(ui.IconFunc, s))
+			nodes := make([]ui.Node, len(sigs))
+			for i, s := range sigs {
+				nodes[i] = ui.SignatureNode(s)
 			}
+			cmd.Println(ui.Tree(args[0], nodes))
 			return nil
 		},
 	}

@@ -18,7 +18,7 @@ func newWriteCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "write <file>",
 		Aliases: []string{"wr"},
-		Short:   ui.IconWrite + " Surgically replace a symbol with new source text (atomic)",
+		Short:   "Surgically replace a symbol with new source text (atomic)",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if name == "" {
@@ -72,20 +72,5 @@ func resolveText(text, from string) (string, error) {
 
 // printWriteResult renders the all-or-nothing outcome of a batch write.
 func printWriteResult(cmd *cobra.Command, res crwai.WriteResult) {
-	if res.Applied {
-		cmd.Println(ui.OK("applied %d edit(s) to %s", len(res.Edits), res.Path))
-	} else {
-		cmd.Println(ui.Fail(fmt.Errorf("no edits applied to %s (left untouched)", res.Path)))
-	}
-	for _, e := range res.Edits {
-		mark := ui.IconOK
-		if !e.OK {
-			mark = ui.IconErr
-		}
-		line := fmt.Sprintf("%s  %s %s", mark, e.Target.Kind, e.Target.Name)
-		if e.Reason != "" {
-			line += " — " + e.Reason
-		}
-		cmd.Println(line)
-	}
+	cmd.Println(ui.WriteResult(res))
 }

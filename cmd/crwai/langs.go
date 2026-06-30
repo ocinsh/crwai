@@ -12,13 +12,15 @@ func newLangsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "langs",
 		Aliases: []string{"lng"},
-		Short:   ui.IconLang + " List the supported languages and their file extensions",
+		Short:   "List the supported languages and their file extensions",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cmd.Println(ui.Heading(ui.IconLang, "Supported languages"))
-			for _, l := range crwai.New().Languages() {
-				cmd.Println(ui.Lang(l.Name, l.Extensions))
+			langs := crwai.New().Languages()
+			nodes := make([]ui.Node, len(langs))
+			for i, l := range langs {
+				nodes[i] = ui.LangNode(l.Name, l.Extensions)
 			}
+			cmd.Println(ui.Tree("supported languages", nodes))
 			return nil
 		},
 	}

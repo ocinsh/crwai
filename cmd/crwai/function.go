@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/ocinsh/crwai"
 	"github.com/ocinsh/crwai/cmd/crwai/ui"
 )
 
@@ -13,7 +14,7 @@ func newFunctionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "function <file> <name>",
 		Aliases: []string{"fn", "get-function"},
-		Short:   ui.IconMethod + " Print a whole function or method (doc, signature, body)",
+		Short:   "Print a whole function or method (doc, signature, body)",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := engineFor(cmd)
@@ -24,12 +25,11 @@ func newFunctionCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			icon := ui.IconFunc
+			kind := crwai.KindFunc
 			if container != "" {
-				icon = ui.IconMethod
+				kind = crwai.KindMethod
 			}
-			cmd.Println(ui.Heading(icon, args[1]))
-			cmd.Println(fn)
+			cmd.Println(ui.Symbol(args[0], kind, args[1], fn))
 			return nil
 		},
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/ocinsh/crwai"
 	"github.com/ocinsh/crwai/cmd/crwai/ui"
 )
 
@@ -11,7 +12,7 @@ func newInterfaceCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "interface <file> <name>",
 		Aliases: []string{"iface"},
-		Short:   ui.IconInterface + " Print the full definition of an interface/protocol/trait",
+		Short:   "Print the full definition of an interface/protocol/trait",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eng, err := engineFor(cmd)
@@ -22,8 +23,7 @@ func newInterfaceCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Println(ui.Heading(ui.IconInterface, args[1]))
-			cmd.Println(def)
+			cmd.Println(ui.Symbol(args[0], crwai.KindInterface, args[1], def))
 			return nil
 		},
 	}
