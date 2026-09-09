@@ -165,9 +165,10 @@ func SignatureNodes(sigs []crwai.Signature) []Node {
 	for _, s := range sigs {
 		node := signatureNode(s)
 		if s.Container == "" {
-			if s.Kind == crwai.KindStruct || s.Kind == crwai.KindInterface {
-				index[s.Name] = len(out)
-			}
+			// Any top-level symbol can own a method: a Go method hangs off a named
+			// type as readily as off a struct, so the index is not restricted to
+			// the struct and interface kinds.
+			index[s.Name] = len(out)
 			out = append(out, node)
 			continue
 		}
