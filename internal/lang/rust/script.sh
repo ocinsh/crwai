@@ -166,19 +166,19 @@ CP="$WORK/rev.rs"; cp "$BASIC" "$CP"
 H0="$(sha "$CP")"
 
 resp="$(call_tool write_function '{"path":"'"$CP"'","edits":[{"kind":"func","name":"add","new_text":"fn add(a: i32, b: i32) -> i32 {\n    a + b + 0\n}"}]}')"
-applied="$(jget '.result.structuredContent.result.Applied' "$resp")"
-if { [ "$HAVE_JQ" -eq 1 ] && [ "$applied" = "true" ]; } || { [ "$HAVE_JQ" -ne 1 ] && printf '%s' "$resp" | grep -q '"Applied":true'; }; then
+applied="$(jget '.result.structuredContent.result.applied' "$resp")"
+if { [ "$HAVE_JQ" -eq 1 ] && [ "$applied" = "true" ]; } || { [ "$HAVE_JQ" -ne 1 ] && printf '%s' "$resp" | grep -q '"applied":true'; }; then
   [ "$(sha "$CP")" != "$H0" ] && ok "mcp_write_A" || fail "mcp_write_A" "file unchanged"
 else
   fail "mcp_write_A" "not applied"
 fi
 
 resp="$(call_tool write_function '{"path":"'"$CP"'","edits":[{"kind":"func","name":"documented","new_text":"fn documented() -> bool {\n    false\n}"}]}')"
-if printf '%s' "$resp" | grep -q '"Applied":true'; then
+if printf '%s' "$resp" | grep -q '"applied":true'; then
   ok "mcp_write_B"; else fail "mcp_write_B" "not applied"; fi
 
 resp="$(call_tool write_function '{"path":"'"$CP"'","edits":[{"kind":"func","name":"add","new_text":"'"$ADD_ORIG"'"},{"kind":"func","name":"documented","new_text":"'"$DOC_ORIG"'"}]}')"
-printf '%s' "$resp" | grep -q '"Applied":true' || fail "mcp_write_restore_batch" "restore not applied"
+printf '%s' "$resp" | grep -q '"applied":true' || fail "mcp_write_restore_batch" "restore not applied"
 if [ "$(sha "$CP")" = "$H0" ]; then
   ok "mcp_write_reversible"; else fail "mcp_write_reversible" "final hash != original"; fi
 

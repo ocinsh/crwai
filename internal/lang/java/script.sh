@@ -161,7 +161,7 @@ restore_req="$(jq -nc --arg p "$F" \
   --arg t1 "$GREET_ORIG" --arg t2 "$FAREWELL_ORIG" \
   '{jsonrpc:"2.0",id:10,method:"tools/call",params:{name:"write_function",arguments:{path:$p,edits:[{kind:"method",name:"greet",container:"Greeter",new_text:$t1},{kind:"method",name:"farewell",container:"Greeter",new_text:$t2}]}}}')"
 resp="$(printf '%s\n' "$restore_req" | mcp)"
-if echo "$resp" | grep -q '"Applied":true' && [ "$(hash_of "$F")" = "$H0" ]; then
+if echo "$resp" | grep -q '"applied":true' && [ "$(hash_of "$F")" = "$H0" ]; then
   ok "write #3 batch restore (hash back to original)"
 else
   bad "write #3 batch restore" "hash mismatch or batch not applied"
@@ -212,7 +212,7 @@ fi
 call_req="$(jq -nc --arg p "$WORK/java/Greeter.java" \
   '{jsonrpc:"2.0",id:3,method:"tools/call",params:{name:"list_signatures",arguments:{path:$p}}}')"
 resp="$(printf '%s\n' "$call_req" | mcp)"
-if echo "$resp" | grep -q '"Name":"greet"' && echo "$resp" | grep -q '"Name":"identity"'; then
+if echo "$resp" | grep -q '"name":"greet"' && echo "$resp" | grep -q '"name":"identity"'; then
   ok "mcp tools/call list_signatures returns Greeter symbols"
 else
   bad "mcp tools/call list_signatures" "expected symbols missing from response"

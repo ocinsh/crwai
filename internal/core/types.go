@@ -7,6 +7,11 @@
 // interfaces, composed and discovered via type assertion rather than via one
 // large interface. A read-only language implements only the read interfaces; a
 // writable language additionally implements FunctionWriter.
+//
+// Every type that crosses the MCP wire carries explicit `json` tags in
+// lower_snake_case with omitempty on the optional fields. The tags are part of
+// the contract, not decoration: the wire form must stay stable and must not spend
+// an agent's context on empty strings and null arrays.
 package core
 
 // SymbolKind enumerates the kinds of symbols the server can address. It is an
@@ -43,19 +48,19 @@ func (k SymbolKind) String() string {
 // stateless and the disk is the source of truth).
 type SymbolID struct {
 	// Kind disambiguates symbols that may share a name across kinds.
-	Kind SymbolKind
+	Kind SymbolKind `json:"kind"`
 	// Name is the declared identifier of the symbol.
-	Name string
+	Name string `json:"name"`
 	// Container scopes the symbol within an enclosing entity. It is the
 	// receiver type for a Go method, the type of the enclosing `impl` block in
 	// Rust, the enclosing class for Java/Python, and "" for a top-level symbol.
-	Container string
+	Container string `json:"container,omitempty"`
 }
 
 // Position is a 0-based line/column location within a file.
 type Position struct {
-	Line uint
-	Col  uint
+	Line uint `json:"line"`
+	Col  uint `json:"col"`
 }
 
 // Symbol is the lightweight descriptor of a located symbol. It carries identity
@@ -63,14 +68,14 @@ type Position struct {
 // FunctionReader / FunctionBodyReader to keep agent context small.
 type Symbol struct {
 	// ID is the symbolic identity used to address this symbol.
-	ID SymbolID
+	ID SymbolID `json:"id"`
 	// ByteRange is [start, end) byte offsets of the whole symbol in the file.
-	ByteRange [2]uint
+	ByteRange [2]uint `json:"byte_range"`
 	// StartPos / EndPos are the line/column span of the whole symbol.
-	StartPos Position
-	EndPos   Position
+	StartPos Position `json:"start_pos"`
+	EndPos   Position `json:"end_pos"`
 	// Signature is the textual signature (no body).
-	Signature string
+	Signature string `json:"signature,omitempty"`
 }
 
 // Signature is the "light" form of a symbol that the agent reads by default:
@@ -81,40 +86,43 @@ type Signature struct {
 	// it (read_struct vs read_interface vs get_function) and to disambiguate
 	// same-named symbols that differ only by kind (e.g. C's `struct list` vs the
 	// free function `list`).
-	Kind SymbolKind
+	Kind SymbolKind `json:"kind"`
 	// Name is the declared identifier.
-	Name string
+	Name string `json:"name"`
 	// Container scopes the symbol within an enclosing entity (the receiver type for
 	// a method, the enclosing class/impl), "" for a top-level symbol. It is the
 	// machine-readable companion to Text: it tells an agent which struct a method
 	// is bound to without parsing the signature line.
-	Container string
+	Container string `json:"container,omitempty"`
 	// Text is the verbatim signature line as it appears in source — keyword,
 	// receiver, type parameters, parameters and return type, with no body (e.g.
 	// "func (s *Stack[T]) Len() int"). It is set for callable symbols
 	// (func/method); for interfaces/structs it is empty and callers fall back to
 	// Name. This is the faithful form the listing displays.
-	Text string
+	Text string `json:"text,omitempty"`
 	// Params are the textual parameter declarations, in order. They remain as a
 	// structured, machine-readable companion to Text.
-	Params []string
+	Params []string `json:"params,omitempty"`
 	// Returns is the textual return type / return list ("" if none).
-	Returns string
+	Returns string `json:"returns,omitempty"`
 	// Doc is the associated documentation (see language notes: preceding-sibling
 	// comments for Go/Java/JS/TS/Rust/C/C++; docstring inside the body for Python).
-	Doc string
+	Doc string `json:"doc,omitempty"`
 }
 
 // RelativeRange addresses a span by coordinates RELATIVE to the start of the
 // symbol, not the file (e.g. "replace line 3 of the function"). This exists so
 // that the future single-line edit granularity does not change any signatures.
 //
-// v1: the contract is present; resolution may remain unimplemented.
+// v1: the contract is present but resolution is NOT implemented — every language
+// rejects a non-nil Edit.Rel with ErrRelativeRangeNotImplemented, and the field is
+// deliberately absent from the MCP wire schema so an agent is never offered a
+// parameter that cannot work.
 type RelativeRange struct {
-	StartLine int
-	StartCol  int
-	EndLine   int
-	EndCol    int
+	StartLine int `json:"start_line"`
+	StartCol  int `json:"start_col"`
+	EndLine   int `json:"end_line"`
+	EndCol    int `json:"end_col"`
 }
 
 // Edit is a single requested modification, addressed by symbolic identity. It
@@ -122,15 +130,15 @@ type RelativeRange struct {
 //
 //   - Rel == nil: replace the WHOLE target symbol (or its body) with NewText.
 //   - Rel != nil: replace only the span described by Rel (relative to the symbol
-//     start) with NewText. (v1 contract; may remain unimplemented.)
+//     start) with NewText. (v1 contract; not implemented, see RelativeRange.)
 type Edit struct {
 	// Target is the symbol to modify.
-	Target SymbolID
+	Target SymbolID `json:"target"`
 	// NewText is the replacement source text supplied by the agent. The server
 	// never generates code; it only places caller-provided text.
-	NewText string
+	NewText string `json:"new_text"`
 	// Rel optionally narrows the edit to a symbol-relative span.
-	Rel *RelativeRange
+	Rel *RelativeRange `json:"rel,omitempty"`
 }
 
 // ResolvedEdit is an Edit mapped to a concrete byte span on a parsed Source. The

@@ -152,19 +152,19 @@ VAR_EDIT='func Variadic(nums ...int) int {\n\tsum := 0\n\tfor _, n := range nums
 H0="$(sha "$BASIC")"
 
 call 6 write_function "{\"path\":\"$BASIC\",\"edits\":[{\"kind\":\"func\",\"name\":\"Add\",\"new_text\":\"$ADD_EDIT\"}]}"
-check "write #1 (Add) applied" '"Applied":true' "$RESP"
+check "write #1 (Add) applied" '"applied":true' "$RESP"
 [ "$(sha "$BASIC")" != "$H0" ] && ok "write #1 changed the file" || fail "write #1 changed the file" "hash unchanged"
 call 7 get_function_body "{\"path\":\"$BASIC\",\"name\":\"Add\"}"
 check "write #1 still parses (re-read)" "return b + a" "$RESP"
 
 call 8 write_function "{\"path\":\"$BASIC\",\"edits\":[{\"kind\":\"func\",\"name\":\"Variadic\",\"new_text\":\"$VAR_EDIT\"}]}"
-check "write #2 (Variadic) applied" '"Applied":true' "$RESP"
+check "write #2 (Variadic) applied" '"applied":true' "$RESP"
 call 9 get_function_body "{\"path\":\"$BASIC\",\"name\":\"Variadic\"}"
 check "write #2 still parses (re-read)" "sum += n" "$RESP"
 
 # Write #3: restore BOTH in a single atomic batch.
 call 10 write_function "{\"path\":\"$BASIC\",\"edits\":[{\"kind\":\"func\",\"name\":\"Add\",\"new_text\":\"$ADD_ORIG\"},{\"kind\":\"func\",\"name\":\"Variadic\",\"new_text\":\"$VAR_ORIG\"}]}"
-check "write #3 (restore batch) applied" '"Applied":true' "$RESP"
+check "write #3 (restore batch) applied" '"applied":true' "$RESP"
 if [ "$(sha "$BASIC")" = "$H0" ]; then
 	ok "reversibility: final hash equals original"
 else

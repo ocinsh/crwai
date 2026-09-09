@@ -217,7 +217,7 @@ else
     jq -cn --arg p "$MP" --arg n "$2" --arg t "$3" \
       "{jsonrpc:\"2.0\",id:$1,method:\"tools/call\",params:{name:\"write_function\",arguments:{path:\$p,edits:[{kind:\"method\",name:\$n,container:\"Rectangle\",new_text:\$t}]}}}"
   }
-  applied() { ok_text "$1" | jq -r '.result.Applied' 2>/dev/null; }
+  applied() { ok_text "$1" | jq -r '.result.applied' 2>/dev/null; }
 
   # Write #1: modify area. Write #2: modify describe. (both valid)
   r=$(mcp_call 11 "$(one_edit 11 area "$MOD_AREA")")

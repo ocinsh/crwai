@@ -193,7 +193,7 @@ MCP_BIG="$WORK/mcp_big.cpp"
 cp "$BIG" "$MCP_BIG"
 
 # 3a. Reads.
-if call_tool list_signatures '{"path":"'"$MCP_BIG"'"}' | grep -q '"Name":"add"'; then
+if call_tool list_signatures '{"path":"'"$MCP_BIG"'"}' | grep -q '"name":"add"'; then
   ok "mcp: list_signatures"
 else
   fail "mcp: list_signatures"

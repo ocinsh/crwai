@@ -123,7 +123,7 @@ elif mcp_start; then
 
 	# --- 2a. reads on a .ts file (pure TypeScript grammar) ---
 	mcp_call list_signatures "$(jq -nc --arg p "$MATH" '{path:$p}')"
-	assert "mcp[.ts]: list_signatures" "$(printf '%s' "$RESP" | jq -rc '.result.structuredContent.signatures[].Name' 2>/dev/null | tr '\n' ' ')" "multiply"
+	assert "mcp[.ts]: list_signatures" "$(printf '%s' "$RESP" | jq -rc '.result.structuredContent.signatures[].name' 2>/dev/null | tr '\n' ' ')" "multiply"
 
 	mcp_call get_function "$(jq -nc --arg p "$MATH" '{path:$p, name:"multiply"}')"
 	assert "mcp[.ts]: get_function" "$(printf '%s' "$RESP" | jq -r '.result.structuredContent.function' 2>/dev/null)" "return a * b"
@@ -139,7 +139,7 @@ elif mcp_start; then
 
 	# --- 2b. reads on a .tsx file (TSX grammar, JSX-aware) ---
 	mcp_call list_signatures "$(jq -nc --arg p "$WIDGET" '{path:$p}')"
-	assert "mcp[.tsx]: list_signatures" "$(printf '%s' "$RESP" | jq -rc '.result.structuredContent.signatures[].Name' 2>/dev/null | tr '\n' ' ')" "Greeting"
+	assert "mcp[.tsx]: list_signatures" "$(printf '%s' "$RESP" | jq -rc '.result.structuredContent.signatures[].name' 2>/dev/null | tr '\n' ' ')" "Greeting"
 
 	mcp_call get_function_body "$(jq -nc --arg p "$WIDGET" '{path:$p, name:"Greeting"}')"
 	assert "mcp[.tsx]: get_function_body (JSX)" "$(printf '%s' "$RESP" | jq -r '.result.structuredContent.body' 2>/dev/null)" 'className="greeting"'
@@ -153,16 +153,16 @@ elif mcp_start; then
 	H0=$(sha "$REV")
 
 	mcp_call write_function "$(jq -nc --arg p "$REV" --arg t $'function add(a: number, b: number): number {\n  return b + a;\n}' '{path:$p, edits:[{kind:"func", name:"add", new_text:$t}]}')"
-	W1=$(printf '%s' "$RESP" | jq -r '.result.structuredContent.result.Applied' 2>/dev/null)
+	W1=$(printf '%s' "$RESP" | jq -r '.result.structuredContent.result.applied' 2>/dev/null)
 	H1=$(sha "$REV")
 	if [ "$W1" = "true" ] && [ "$H1" != "$H0" ]; then pass "mcp: write #1 (A changed)"; else fail "mcp: write #1 (A changed)" "applied=$W1 hashChanged=$([ "$H1" != "$H0" ] && echo yes || echo no)"; fi
 
 	mcp_call write_function "$(jq -nc --arg p "$REV" --arg t $'function subtract(a: number, b: number): number {\n  return -(b - a);\n}' '{path:$p, edits:[{kind:"func", name:"subtract", new_text:$t}]}')"
-	W2=$(printf '%s' "$RESP" | jq -r '.result.structuredContent.result.Applied' 2>/dev/null)
+	W2=$(printf '%s' "$RESP" | jq -r '.result.structuredContent.result.applied' 2>/dev/null)
 	assert "mcp: write #2 (B changed)" "$W2" "true"
 
 	mcp_call write_function "$(jq -nc --arg p "$REV" --arg a "$ADD_ORIG" --arg b "$SUB_ORIG" '{path:$p, edits:[{kind:"func", name:"add", new_text:$a}, {kind:"func", name:"subtract", new_text:$b}]}')"
-	W3=$(printf '%s' "$RESP" | jq -r '.result.structuredContent.result.Applied' 2>/dev/null)
+	W3=$(printf '%s' "$RESP" | jq -r '.result.structuredContent.result.applied' 2>/dev/null)
 	H3=$(sha "$REV")
 	if [ "$W3" = "true" ] && [ "$H3" = "$H0" ]; then pass "mcp: write #3 restores original (hash matches)"; else fail "mcp: write #3 restores original" "applied=$W3 hash $([ "$H3" = "$H0" ] && echo match || echo mismatch)"; fi
 

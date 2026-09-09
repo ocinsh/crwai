@@ -27,19 +27,19 @@ import (
 // tree — the form returned by listing (the Postman analogue of core.Signature).
 type Request struct {
 	// Name is the request's display name in the collection.
-	Name string
+	Name string `json:"name"`
 	// Method is the HTTP verb (GET, POST, PUT, ...).
-	Method string
+	Method string `json:"method"`
 	// URL is the raw request URL, INCLUDING any unresolved Postman placeholders
 	// (e.g. "https://{{Morningstar as a Service (EMEA)}}/token/oauth"). In a v2.1
 	// export the `url` node is an object { raw, host, path, protocol }; this is its
 	// `raw` field. (A plain-string `url` is also tolerated for older exports.)
-	URL string
+	URL string `json:"url"`
 	// Folder is the slash-joined folder path locating the request inside the
 	// collection tree (e.g. "Scenario Analysis/Metrics"). It disambiguates
 	// requests that share a Name or URL across folders (commonly: the same
 	// endpoint duplicated per region).
-	Folder string
+	Folder string `json:"folder,omitempty"`
 }
 
 // RequestDetail is the full read of a request — METHOD / URL / BODY / DOC. A
@@ -53,11 +53,11 @@ type RequestDetail struct {
 	// request has no body. Only the `raw` body mode is read; other modes
 	// (formdata, urlencoded, graphql, file) yield "". In the reference export every
 	// body is `raw`, so this covers the corpus.
-	Body string
+	Body string `json:"body,omitempty"`
 	// Doc is the request's documentation: `request.description` (Markdown text)
 	// when present, falling back to the body of the first saved example in
 	// `response[]` when there is no description, and "" when neither exists.
-	Doc string
+	Doc string `json:"doc,omitempty"`
 }
 
 // Collection is a parsed Postman export, valid only for the duration of one call.

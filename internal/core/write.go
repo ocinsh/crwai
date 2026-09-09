@@ -12,22 +12,22 @@ import (
 type WriteResult struct {
 	// Applied is true only if every edit in the batch was applied and persisted.
 	// On any failure it is false and the disk is left untouched.
-	Applied bool
+	Applied bool `json:"applied"`
 	// Path is the file the batch targeted.
-	Path string
+	Path string `json:"path"`
 	// Edits reports the per-edit outcome, in request order.
-	Edits []EditOutcome
+	Edits []EditOutcome `json:"edits"`
 }
 
 // EditOutcome is the result of a single edit within a batch.
 type EditOutcome struct {
 	// Target is the symbol the edit addressed.
-	Target SymbolID
+	Target SymbolID `json:"target"`
 	// OK is true if this edit resolved and applied without conflict.
-	OK bool
+	OK bool `json:"ok"`
 	// Reason explains a failure (symbol not found, overlap, broke syntax, ...);
 	// "" on success.
-	Reason string
+	Reason string `json:"reason,omitempty"`
 }
 
 // BatchWrite is the language-agnostic write pipeline. It is the single place that

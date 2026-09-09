@@ -192,14 +192,14 @@ SUB_V1='int sub(int a, int b) {
 BASE_HASH="$(sha "$SIMPLE")"
 
 w1=$(mcp 2 write_function "{\"path\":\"$SIMPLE\",\"edits\":[{\"kind\":\"func\",\"name\":\"add\",\"new_text\":\"$(jsonesc "$ADD_V1")\"}]}")
-if printf '%s' "$w1" | grep -q '"Applied":true' && ! [ "$(sha "$SIMPLE")" = "$BASE_HASH" ]; then
+if printf '%s' "$w1" | grep -q '"applied":true' && ! [ "$(sha "$SIMPLE")" = "$BASE_HASH" ]; then
 	ok "mcp write #1 (add changed)"
 else
 	fail "mcp write #1 (add changed)" "not applied or file unchanged"
 fi
 
 w2=$(mcp 2 write_function "{\"path\":\"$SIMPLE\",\"edits\":[{\"kind\":\"func\",\"name\":\"sub\",\"new_text\":\"$(jsonesc "$SUB_V1")\"}]}")
-if printf '%s' "$w2" | grep -q '"Applied":true'; then
+if printf '%s' "$w2" | grep -q '"applied":true'; then
 	ok "mcp write #2 (sub changed)"
 else
 	fail "mcp write #2 (sub changed)" "not applied"
@@ -207,7 +207,7 @@ fi
 
 # Restore both in a single atomic batch.
 w3=$(mcp 2 write_function "{\"path\":\"$SIMPLE\",\"edits\":[{\"kind\":\"func\",\"name\":\"add\",\"new_text\":\"$(jsonesc "$ADD_ORIG")\"},{\"kind\":\"func\",\"name\":\"sub\",\"new_text\":\"$(jsonesc "$SUB_ORIG")\"}]}")
-if printf '%s' "$w3" | grep -q '"Applied":true' && [ "$(sha "$SIMPLE")" = "$BASE_HASH" ]; then
+if printf '%s' "$w3" | grep -q '"applied":true' && [ "$(sha "$SIMPLE")" = "$BASE_HASH" ]; then
 	ok "mcp write #3 (batch restore -> hash matches baseline)"
 else
 	fail "mcp write #3 (reversibility)" "hash differs from baseline after restore"

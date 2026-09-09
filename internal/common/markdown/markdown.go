@@ -30,30 +30,30 @@ import (
 // agent reads first (the Markdown analogue of core.Signature).
 type Heading struct {
 	// Level is the ATX heading depth, 1..6 (`#` == 1, `##` == 2, ...).
-	Level int
+	Level int `json:"level"`
 	// Text is the heading text with the leading `#`s and surrounding spaces
 	// stripped (e.g. "Prerequisites").
-	Text string
+	Text string `json:"text"`
 	// Path is the slash-joined chain of ancestor headings ending in this one
 	// (e.g. "Installation/Prerequisites"). It is the STABLE IDENTITY used to
 	// address a section, disambiguating headings that share the same Text under
 	// different parents.
-	Path string
+	Path string `json:"path"`
 	// Line is the 1-based line number of the heading line in the file.
-	Line uint
+	Line uint `json:"line"`
 }
 
 // Section is a heading together with the content beneath it — the full read of
 // one slice of a document (the Markdown analogue of get_function).
 type Section struct {
 	// Heading is this section's own heading.
-	Heading Heading
+	Heading Heading `json:"heading"`
 	// Content is the raw Markdown spanning from the heading down to (but not
 	// including) the next heading of equal-or-shallower level. It INCLUDES the
 	// heading line itself, so the returned text is a self-contained, re-insertable
 	// block; nested deeper subsections are part of the content. Trailing blank
 	// lines before the next heading are trimmed.
-	Content string
+	Content string `json:"content"`
 }
 
 // SectionEdit is a single requested rewrite, addressed by heading Path. The
@@ -61,9 +61,9 @@ type Section struct {
 // never generates it. It is the Markdown analogue of core.Edit.
 type SectionEdit struct {
 	// Path is the heading identity of the section to replace (see Heading.Path).
-	Path string
+	Path string `json:"path"`
 	// NewText is the replacement Markdown block supplied by the caller.
-	NewText string
+	NewText string `json:"new_text"`
 }
 
 // Doc is a parsed Markdown document, valid only for the duration of one call. The
