@@ -40,10 +40,21 @@ func serve(ctx context.Context) error {
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
-// registerTools wires each v1 capability to its decorated MCP tool. Every handler
-// is a thin adapter from the tool's typed In struct to an engine method and back
-// to the tool's Out struct — all parsing and language logic lives in the engine.
+// registerTools wires each capability to its decorated MCP tool. Every handler is
+// a thin adapter from the tool's typed In struct to an engine method and back to
+// the tool's Out struct — all parsing, language, and document logic lives in the
+// engine.
+//
+// The code tools honour the per-call `lang` override; the common-file tools do
+// not have one, because they are selected explicitly and never resolved by
+// extension.
 func registerTools(s *mcp.Server, eng *crwai.Engine) {
+	registerCodeTools(s, eng)
+	registerDocTools(s, eng)
+}
+
+// registerCodeTools wires the six tree-sitter tools.
+func registerCodeTools(s *mcp.Server, eng *crwai.Engine) {
 	mcptool.Register(s, mcptool.ListSignatures,
 		func(ctx context.Context, _ *mcp.CallToolRequest, in mcptool.ListSignaturesIn) (*mcp.CallToolResult, mcptool.ListSignaturesOut, error) {
 			e, err := withLang(eng, in.Lang)
@@ -95,7 +106,8 @@ func registerTools(s *mcp.Server, eng *crwai.Engine) {
 		})
 
 	// write_function delegates to the engine's all-or-nothing pipeline, which
-	// reports ErrReadOnlyLanguage if the resolved language has no write support.
+	// reports ErrReadOnlyLanguage if the resolved language has no write support
+	// and ErrNoEdits if the batch is empty.
 	mcptool.Register(s, mcptool.WriteFunction,
 		func(ctx context.Context, _ *mcp.CallToolRequest, in mcptool.WriteFunctionIn) (*mcp.CallToolResult, mcptool.WriteFunctionOut, error) {
 			e, err := withLang(eng, in.Lang)
@@ -104,6 +116,40 @@ func registerTools(s *mcp.Server, eng *crwai.Engine) {
 			}
 			res, err := e.Write(in.Path, toEdits(in.Edits)...)
 			return nil, mcptool.WriteFunctionOut{Result: res}, err
+		})
+}
+
+// registerDocTools wires the five common-file tools: three for Markdown, two for
+// a Postman export.
+func registerDocTools(s *mcp.Server, eng *crwai.Engine) {
+	mcptool.Register(s, mcptool.OutlineMarkdown,
+		func(ctx context.Context, _ *mcp.CallToolRequest, in mcptool.OutlineMarkdownIn) (*mcp.CallToolResult, mcptool.OutlineMarkdownOut, error) {
+			heads, err := eng.Outline(in.Path)
+			return nil, mcptool.OutlineMarkdownOut{Headings: heads}, err
+		})
+
+	mcptool.Register(s, mcptool.ReadSection,
+		func(ctx context.Context, _ *mcp.CallToolRequest, in mcptool.ReadSectionIn) (*mcp.CallToolResult, mcptool.ReadSectionOut, error) {
+			sec, err := eng.Section(in.Path, in.Heading)
+			return nil, mcptool.ReadSectionOut{Section: sec}, err
+		})
+
+	mcptool.Register(s, mcptool.WriteSection,
+		func(ctx context.Context, _ *mcp.CallToolRequest, in mcptool.WriteSectionIn) (*mcp.CallToolResult, mcptool.WriteSectionOut, error) {
+			res, err := eng.WriteSections(in.Path, toSectionEdits(in.Edits)...)
+			return nil, mcptool.WriteSectionOut{Result: res}, err
+		})
+
+	mcptool.Register(s, mcptool.ListRequests,
+		func(ctx context.Context, _ *mcp.CallToolRequest, in mcptool.ListRequestsIn) (*mcp.CallToolResult, mcptool.ListRequestsOut, error) {
+			reqs, err := eng.Requests(in.Path, in.Filter)
+			return nil, mcptool.ListRequestsOut{Requests: reqs}, err
+		})
+
+	mcptool.Register(s, mcptool.ReadRequest,
+		func(ctx context.Context, _ *mcp.CallToolRequest, in mcptool.ReadRequestIn) (*mcp.CallToolResult, mcptool.ReadRequestOut, error) {
+			reqs, err := eng.Request(in.Path, in.Query)
+			return nil, mcptool.ReadRequestOut{Requests: reqs}, err
 		})
 }
 
@@ -117,15 +163,26 @@ func withLang(eng *crwai.Engine, name string) (*crwai.Engine, error) {
 	return eng.Lang(name)
 }
 
-// toEdits maps the MCP wire EditIn structs to public crwai.Edit values.
+// toEdits maps the MCP wire EditIn structs to public crwai.Edit values. It goes
+// through TargetFor, so an edit that names a container without naming a kind
+// resolves the method the read tools would have returned.
 func toEdits(in []mcptool.EditIn) []crwai.Edit {
 	edits := make([]crwai.Edit, 0, len(in))
 	for _, e := range in {
 		edits = append(edits, crwai.Edit{
-			Target:  crwai.SymbolID{Kind: crwai.ParseKind(e.Kind), Name: e.Name, Container: e.Container},
+			Target:  crwai.TargetFor(e.Kind, e.Name, e.Container),
 			NewText: e.NewText,
-			Rel:     e.Rel,
 		})
+	}
+	return edits
+}
+
+// toSectionEdits maps the MCP wire SectionEditIn structs to public
+// crwai.SectionEdit values.
+func toSectionEdits(in []mcptool.SectionEditIn) []crwai.SectionEdit {
+	edits := make([]crwai.SectionEdit, 0, len(in))
+	for _, e := range in {
+		edits = append(edits, crwai.SectionEdit{Path: e.Heading, NewText: e.NewText})
 	}
 	return edits
 }

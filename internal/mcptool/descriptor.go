@@ -41,16 +41,9 @@ type ToolDescriptor struct {
 // MCP tool. The In/Out type parameters drive automatic schema inference in the
 // SDK, so callers pass a typed handler and never build a schema by hand.
 //
-// The contract: build a *mcp.Tool whose Name comes from the descriptor and whose
-// Description is the Mission plus the rendered Params/Examples, then hand it to
-// mcp.AddTool. Implementation deferred (skeleton).
-//
-//	func Register[In, Out any](s *mcp.Server, d ToolDescriptor, h mcp.ToolHandlerFor[In, Out]) {
-//	    mcp.AddTool(s, &mcp.Tool{
-//	        Name:        d.Name,
-//	        Description: d.render(), // Mission + "\n\nParameters:\n..." + "\n\nExamples:\n..."
-//	    }, h)
-//	}
+// It builds a *mcp.Tool whose Name comes from the descriptor and whose Description
+// is the Mission plus the rendered Params and Examples, then hands it to
+// mcp.AddTool.
 func Register[In, Out any](s *mcp.Server, d ToolDescriptor, h mcp.ToolHandlerFor[In, Out]) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        d.Name,
