@@ -31,6 +31,16 @@ const (
 	KindInterface SymbolKind = "interface"
 	// KindStruct is a struct / class / record declaration.
 	KindStruct SymbolKind = "struct"
+	// KindConst is a named constant.
+	KindConst SymbolKind = "const"
+	// KindVar is a variable declared at the top level of a file: a package-level
+	// var in Go, a module-level assignment in Python, a static in Rust or C.
+	KindVar SymbolKind = "var"
+	// KindType is a named type that is neither a struct nor an interface: an
+	// alias, a newtype, a function type, a typedef. A language whose enums read
+	// like a struct (Java, C) reports those as KindStruct instead, because
+	// read_struct already returns them whole.
+	KindType SymbolKind = "type"
 	// KindSection is a section of a non-code document, addressed by heading path
 	// rather than by name and container. It is the one kind the COMMON-FILE tools
 	// produce (see internal/common/markdown): the write pipeline and its
@@ -100,11 +110,15 @@ type Signature struct {
 	// machine-readable companion to Text: it tells an agent which struct a method
 	// is bound to without parsing the signature line.
 	Container string `json:"container,omitempty"`
-	// Text is the verbatim signature line as it appears in source — keyword,
-	// receiver, type parameters, parameters and return type, with no body (e.g.
-	// "func (s *Stack[T]) Len() int"). It is set for callable symbols
-	// (func/method); for interfaces/structs it is empty and callers fall back to
-	// Name. This is the faithful form the listing displays.
+	// Text is the verbatim declaration line as it appears in source, with no body.
+	// For a callable that is the whole signature — keyword, receiver, type
+	// parameters, parameters and return type (e.g. "func (s *Stack[T]) Len() int").
+	// For a const, var or type it is the declaration itself, which is where its
+	// declared type lives (e.g. "type ID string", "MaxRetries = 3"); when such a
+	// declaration spans several lines, only its first line is reported, and
+	// get_declaration returns the whole thing. It is empty for interfaces and
+	// structs, whose name is the whole of their light form, and callers fall back
+	// to Name.
 	Text string `json:"text,omitempty"`
 	// Params are the textual parameter declarations, in order. They remain as a
 	// structured, machine-readable companion to Text.

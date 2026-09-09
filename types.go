@@ -53,6 +53,13 @@ const (
 	KindInterface = core.KindInterface
 	// KindStruct is a struct / class / record declaration.
 	KindStruct = core.KindStruct
+	// KindConst is a named constant.
+	KindConst = core.KindConst
+	// KindVar is a variable declared at the top level of a file.
+	KindVar = core.KindVar
+	// KindType is a named type that is neither a struct nor an interface: an
+	// alias, a newtype, a function type, a typedef.
+	KindType = core.KindType
 	// KindSection is a section of a non-code document, addressed by heading path.
 	// It is produced only by the common-file tools (see DocWriter).
 	KindSection = core.KindSection
@@ -99,8 +106,10 @@ type LanguageInfo struct {
 	Extensions []string `json:"extensions"`
 }
 
-// ParseKind maps a kind string ("func", "method", "interface", "struct") to a
-// SymbolKind, defaulting to KindFunc for anything unrecognised. It is the
+// ParseKind maps a kind string to a SymbolKind, defaulting to KindFunc for
+// anything unrecognised. It must know every kind ListSignatures can report: a kind
+// it does not recognise silently becomes a function, and the symbol is then looked
+// for among the wrong declarations. It is the
 // convenience used by front-ends that accept the kind as free text. Prefer
 // TargetFor when a container is also in play: it applies the same
 // container-implies-method rule the read methods use.
@@ -112,6 +121,12 @@ func ParseKind(s string) SymbolKind {
 		return KindInterface
 	case "struct":
 		return KindStruct
+	case "const":
+		return KindConst
+	case "var":
+		return KindVar
+	case "type":
+		return KindType
 	default:
 		return KindFunc
 	}
