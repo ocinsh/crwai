@@ -49,6 +49,20 @@ const (
 	queryClasses = `(class_definition name: (identifier) @name)`
 )
 
+// Node kinds of the bodyless top-level declarations. Dart keeps these flat under
+// `program`, so they are matched by walking the root's children rather than by a
+// query.
+const (
+	kindFinalDeclList  = "static_final_declaration_list"
+	kindFinalDecl      = "static_final_declaration"
+	kindInitIdentList  = "initialized_identifier_list"
+	kindInitIdent      = "initialized_identifier"
+	kindTypeAlias      = "type_alias"
+	kindEnumDecl       = "enum_declaration"
+	kindIdentifier     = "identifier"
+	kindTypeIdentifier = "type_identifier"
+)
+
 // Compile-time assertions: Dart satisfies the read interfaces (via Language) and
 // the optional write capability.
 var (
@@ -129,6 +143,16 @@ func (d Dart) ListSignatures(src core.Source) ([]core.Signature, error) {
 		entries = append(entries, entry{c.node.StartByte(), core.Signature{Kind: kind, Name: c.name, Doc: doc}})
 	}
 
+	for _, decl := range d.collectDeclarations(src) {
+		sig := core.Signature{Kind: decl.id.Kind, Name: decl.id.Name, Doc: decl.doc}
+		// An enum reads as a struct, and a struct's light form is its name: only
+		// the bodyless bindings carry a declaration line.
+		if decl.id.Kind != core.KindStruct {
+			sig.Text = decl.text
+		}
+		entries = append(entries, entry{decl.start, sig})
+	}
+
 	sort.Slice(entries, func(i, j int) bool { return entries[i].start < entries[j].start })
 	out := make([]core.Signature, len(entries))
 	for i, e := range entries {
@@ -206,11 +230,194 @@ func (d Dart) ResolveEdits(src core.Source, edits []core.Edit) ([]core.ResolvedE
 			}
 			start, end = s, en
 		default:
-			return nil, fmt.Errorf("%w: %s", core.ErrSymbolNotFound, e.Target.Name)
+			s, ok := d.findDeclaration(src, e.Target)
+			if !ok {
+				return nil, fmt.Errorf("%w: %s", core.ErrSymbolNotFound, e.Target.Name)
+			}
+			start, end = s.start, s.end
 		}
 		out = append(out, core.ResolvedEdit{StartByte: start, EndByte: end, NewText: e.NewText, From: e.Target})
 	}
 	return out, nil
+}
+
+// ReadDeclaration returns the full text of any symbol id names, whatever its
+// kind, which is the only reader for the top-level variables, type aliases and
+// enums that have none of their own. An empty Kind matches on name alone.
+func (d Dart) ReadDeclaration(src core.Source, id core.SymbolID) (string, error) {
+	bytes := src.Bytes()
+
+	if id.Kind == "" || id.Kind == core.KindFunc || id.Kind == core.KindMethod {
+		if f, ok := d.findFunction(src, id); ok {
+			start, end := functionSpan(f, bytes)
+			return string(bytes[start:end]), nil
+		}
+	}
+	if id.Kind == "" || id.Kind == core.KindStruct {
+		if text, err := d.readClass(src, id.Name, false); err == nil {
+			return text, nil
+		}
+	}
+	if id.Kind == "" || id.Kind == core.KindInterface {
+		if text, err := d.readClass(src, id.Name, true); err == nil {
+			return text, nil
+		}
+	}
+	if s, ok := d.findDeclaration(src, id); ok {
+		return strings.TrimSpace(string(bytes[s.docStart:s.end])), nil
+	}
+	return "", fmt.Errorf("%w: %s", core.ErrSymbolNotFound, id.Name)
+}
+
+// declSym is a located top-level declaration that has no body: a variable, a type
+// alias, or an enum. Dart lays these out flat under `program` — the `const`
+// keyword, the type and the name list are siblings, not one declaration node — so
+// the span has to be reconstructed rather than read off a single node.
+type declSym struct {
+	id       core.SymbolID
+	docStart uint // start of the leading doc comment, or of the declaration itself
+	start    uint // start of the declaration proper, doc excluded
+	end      uint // end of the declaration, trailing semicolon included
+	text     string
+	doc      string
+}
+
+// collectDeclarations returns every top-level declaration that carries no body.
+// Only the direct children of `program` are considered, so a variable declared
+// inside a function body is not mistaken for part of the file's surface.
+func (Dart) collectDeclarations(src core.Source) []declSym {
+	bytes := src.Bytes()
+	root := src.Root()
+	var out []declSym
+
+	emit := func(kind core.SymbolKind, name string, node *ts.Node) {
+		if name == "" {
+			return
+		}
+		start, end := declarationSpan(node)
+		head := node
+		if h := headOf(node); h != nil {
+			head = h
+		}
+		doc, docStart := leadingDoc(head, bytes)
+		out = append(out, declSym{
+			id:       core.SymbolID{Kind: kind, Name: name},
+			docStart: docStart,
+			start:    start,
+			end:      end,
+			text:     firstLine(string(bytes[start:end])),
+			doc:      doc,
+		})
+	}
+
+	for i := uint(0); i < root.NamedChildCount(); i++ {
+		child := root.NamedChild(i)
+		switch child.Kind() {
+		case kindFinalDeclList:
+			// `const X = 1;` and `final Y = 2;`. Only `const` is a compile-time
+			// constant in Dart; `final` binds once at run time, so it is a variable.
+			kind := core.KindVar
+			if start, _ := declarationSpan(child); strings.HasPrefix(strings.TrimSpace(string(bytes[start:child.StartByte()])), "const") {
+				kind = core.KindConst
+			}
+			for j := uint(0); j < child.NamedChildCount(); j++ {
+				d := child.NamedChild(j)
+				if d.Kind() != kindFinalDecl {
+					continue
+				}
+				emit(kind, childText(d, kindIdentifier, bytes), child)
+			}
+		case kindInitIdentList:
+			for j := uint(0); j < child.NamedChildCount(); j++ {
+				d := child.NamedChild(j)
+				if d.Kind() != kindInitIdent {
+					continue
+				}
+				emit(core.KindVar, childText(d, kindIdentifier, bytes), child)
+			}
+		case kindTypeAlias:
+			emit(core.KindType, childText(child, kindTypeIdentifier, bytes), child)
+		case kindEnumDecl:
+			// An enum is a data type read_struct returns whole, as in C and Java.
+			emit(core.KindStruct, childText(child, kindIdentifier, bytes), child)
+		}
+	}
+	return out
+}
+
+// findDeclaration returns the bodyless declaration matching id, ignoring the kind
+// when id leaves it empty.
+func (d Dart) findDeclaration(src core.Source, id core.SymbolID) (declSym, bool) {
+	for _, s := range d.collectDeclarations(src) {
+		if s.id.Name != id.Name {
+			continue
+		}
+		if id.Kind == "" || s.id.Kind == id.Kind {
+			return s, true
+		}
+	}
+	return declSym{}, false
+}
+
+// declarationSpan reconstructs the byte span of a flat top-level declaration: it
+// walks back over the modifier and type siblings that belong to it, and forward
+// over the terminating semicolon.
+func declarationSpan(node *ts.Node) (uint, uint) {
+	start := node.StartByte()
+	if h := headOf(node); h != nil {
+		start = h.StartByte()
+	}
+	end := node.EndByte()
+	if next := node.NextSibling(); next != nil && next.Kind() == ";" {
+		end = next.EndByte()
+	}
+	return start, end
+}
+
+// headOf returns the first sibling node that belongs to the same declaration as
+// node — its `const`/`final`/`var` keyword or its declared type — or nil when node
+// already begins the declaration. It stops at anything that ends a declaration, so
+// it never reaches back into the one above.
+func headOf(node *ts.Node) *ts.Node {
+	var head *ts.Node
+	for p := node.PrevSibling(); p != nil; p = p.PrevSibling() {
+		if !partOfDeclaration(p.Kind()) {
+			break
+		}
+		head = p
+	}
+	return head
+}
+
+// partOfDeclaration reports whether a sibling node kind is a modifier or type that
+// belongs to the declaration following it.
+func partOfDeclaration(kind string) bool {
+	switch kind {
+	case "const_builtin", "final_builtin", "late_builtin", "external_builtin",
+		"inferred_type", "type_identifier", "nullable_type", "function_type",
+		"void_type", "record_type", "type_arguments", "scoped_identifier":
+		return true
+	}
+	return false
+}
+
+// childText returns the text of the first named child of the given kind, or "".
+func childText(n *ts.Node, kind string, bytes []byte) string {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
+		if c := n.NamedChild(i); c.Kind() == kind {
+			return c.Utf8Text(bytes)
+		}
+	}
+	return ""
+}
+
+// firstLine reduces a declaration to its opening line, so a variable bound to a
+// multi-line literal contributes one readable row to a listing.
+func firstLine(text string) string {
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		return strings.TrimSpace(text[:i])
+	}
+	return strings.TrimSpace(text)
 }
 
 // --- symbol collection ------------------------------------------------------
