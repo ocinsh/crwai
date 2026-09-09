@@ -162,6 +162,41 @@ func (e *Engine) Struct(path, name string) (string, error) {
 	return l.ReadStruct(src, core.SymbolID{Kind: core.KindStruct, Name: name})
 }
 
+// Declaration returns the full source of any symbol the listing named, whatever
+// its kind: a function or method, an interface, a struct, or one of the const,
+// var and type declarations that have no reader of their own. It is the general
+// form of Interface and Struct, which stay because a named method is easier to
+// reach for.
+//
+// kind is free text ("func", "method", "interface", "struct", "const", "var",
+// "type"). Leaving it empty is not an error and is the common case: the language
+// then searches every kind by name, which is all a caller that copied a name out
+// of a listing has. A language that has not implemented the capability yet
+// returns ErrNotImplemented.
+func (e *Engine) Declaration(path, kind, name, container string) (string, error) {
+	l, src, err := e.open(path)
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+	reader, ok := l.(core.DeclarationReader)
+	if !ok {
+		return "", ErrNotImplemented
+	}
+	return reader.ReadDeclaration(src, declTarget(kind, name, container))
+}
+
+// declTarget builds the identity Declaration resolves. It differs from TargetFor
+// in one way that matters: an empty kind stays empty rather than defaulting to a
+// function, because an empty kind is how a caller asks the language to search
+// every kind.
+func declTarget(kind, name, container string) core.SymbolID {
+	if kind == "" {
+		return core.SymbolID{Name: name, Container: container}
+	}
+	return TargetFor(kind, name, container)
+}
+
 // Write applies a batch of edits atomically. It resolves the language by
 // extension and delegates to the all-or-nothing core pipeline, which validates
 // the re-parse and persists only if every edit lands. An empty batch is rejected

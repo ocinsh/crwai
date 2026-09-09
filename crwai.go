@@ -66,6 +66,12 @@ type Reader interface {
 	// Struct returns the full definition of the named struct / class / record.
 	Struct(path, name string) (string, error)
 
+	// Declaration returns the full source of any symbol, whatever its kind, which
+	// is the only way to open a const, a var or a type alias: those are reported
+	// by ListSignatures but have no reader of their own. An empty kind searches
+	// every kind by name.
+	Declaration(path, kind, name, container string) (string, error)
+
 	// Languages reports the languages the engine can parse, sorted by name.
 	Languages() []LanguageInfo
 }

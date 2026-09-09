@@ -37,6 +37,23 @@ type StructReader interface {
 	ReadStruct(src Source, id SymbolID) (string, error)
 }
 
+// DeclarationReader returns the full source of ANY symbol a listing named,
+// whatever its kind. It exists because ListSignatures reports more kinds than
+// there are readers: without it a const, a var or a type alias could be
+// discovered and never opened, which is a listing that makes a promise the tool
+// cannot keep.
+//
+// It is a superset of InterfaceReader and StructReader, which stay because a
+// named tool is easier for an agent to reach for than a generic one. Powers
+// `get_declaration`.
+
+type DeclarationReader interface {
+	// ReadDeclaration returns the declaration text of the symbol matching id,
+	// documentation included, exactly as the dedicated readers do for their own
+	// kinds. It returns ErrSymbolNotFound when nothing matches.
+	ReadDeclaration(src Source, id SymbolID) (string, error)
+}
+
 // FunctionWriter is the OPTIONAL write capability. It maps a batch of symbolic
 // Edits onto concrete byte spans on the in-memory Source. It does NOT touch the
 // disk and does NOT order or apply the edits — that is the job of the
