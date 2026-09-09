@@ -59,7 +59,10 @@ func (c C) ListSignatures(src core.Source) ([]core.Signature, error) {
 	out := make([]core.Signature, 0, len(syms))
 	for _, s := range syms {
 		sig := core.Signature{Kind: s.id.Kind, Name: s.id.Name, Container: s.id.Container, Doc: s.doc}
-		if s.id.Kind == core.KindFunc {
+		switch s.id.Kind {
+		case core.KindConst, core.KindVar, core.KindType:
+			sig.Text = firstLine(s.node.Utf8Text(b))
+		case core.KindFunc:
 			fd := functionDeclarator(s.node.ChildByFieldName("declarator"))
 			sig.Params = params(fd, b)
 			sig.Returns = returnType(s.node, b)
@@ -188,19 +191,116 @@ func (C) symbols(src core.Source) []symbol {
 			if t == nil {
 				continue
 			}
+			name := n.ChildByFieldName("declarator")
+			if name == nil {
+				continue
+			}
+			// A typedef over an aggregate IS the aggregate, and read_struct returns
+			// it whole; a typedef over anything else just names a type.
+			kind := core.KindType
 			switch t.Kind() {
 			case "struct_specifier", "union_specifier", "enum_specifier":
-				if name := n.ChildByFieldName("declarator"); name != nil {
-					out = append(out, symbol{
-						id:   core.SymbolID{Kind: core.KindStruct, Name: name.Utf8Text(b)},
-						node: n,
-						doc:  precedingDoc(n, b),
-					})
-				}
+				kind = core.KindStruct
+			}
+			out = append(out, symbol{
+				id:   core.SymbolID{Kind: kind, Name: name.Utf8Text(b)},
+				node: n,
+				doc:  precedingDoc(n, b),
+			})
+		case "preproc_def":
+			// An object-like macro is C's constant. A function-like macro is left
+			// out: it is a callable with no type and no body to read.
+			if name := n.ChildByFieldName("name"); name != nil {
+				out = append(out, symbol{
+					id:   core.SymbolID{Kind: core.KindConst, Name: name.Utf8Text(b)},
+					node: n,
+					doc:  precedingDoc(n, b),
+				})
+			}
+		case "declaration":
+			if sym, ok := declarationSymbol(n, b); ok {
+				out = append(out, sym)
 			}
 		}
 	}
 	return out
+}
+
+// ReadDeclaration returns the full text of any symbol id names, whatever its
+// kind, which is the only reader for the macros, globals and scalar typedefs that
+// have none of their own. An empty Kind matches on name alone.
+func (c C) ReadDeclaration(src core.Source, id core.SymbolID) (string, error) {
+	s, ok := c.findAny(src, id)
+	if !ok {
+		return "", fmt.Errorf("%w: %s", core.ErrSymbolNotFound, id.Name)
+	}
+	text := s.node.Utf8Text(src.Bytes())
+	if s.doc != "" {
+		return s.doc + "\n" + text, nil
+	}
+	return text, nil
+}
+
+// findAny returns the first top-level symbol matching id, ignoring the kind when
+// id leaves it empty so a bare name still resolves.
+func (c C) findAny(src core.Source, id core.SymbolID) (symbol, bool) {
+	for _, s := range c.symbols(src) {
+		if s.id.Name != id.Name {
+			continue
+		}
+		if id.Kind == "" || s.id.Kind == id.Kind {
+			return s, true
+		}
+	}
+	return symbol{}, false
+}
+
+// declarationSymbol turns a top-level `declaration` into a variable symbol. It
+// returns false for a function prototype, which declares no storage, and for any
+// declarator that binds no plain identifier.
+func declarationSymbol(n *sitter.Node, b []byte) (symbol, bool) {
+	d := n.ChildByFieldName("declarator")
+	if d == nil {
+		return symbol{}, false
+	}
+	name := declaredName(d)
+	if name == nil {
+		return symbol{}, false
+	}
+	return symbol{
+		id:   core.SymbolID{Kind: core.KindVar, Name: name.Utf8Text(b)},
+		node: n,
+		doc:  precedingDoc(n, b),
+	}, true
+}
+
+// declaredName unwraps the declarator chain C wraps around a declared name -- an
+// initialiser, a pointer, an array -- down to the identifier itself. It returns
+// nil for a function declarator, because a prototype names a function that is
+// defined elsewhere and is not a symbol of this file.
+func declaredName(d *sitter.Node) *sitter.Node {
+	for d != nil {
+		switch d.Kind() {
+		case "identifier":
+			return d
+		case "function_declarator":
+			return nil
+		case "init_declarator", "pointer_declarator", "array_declarator", "parenthesized_declarator":
+			d = d.ChildByFieldName("declarator")
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
+// firstLine reduces a declaration to its opening line, so a global initialised
+// with a multi-line aggregate contributes one readable row to a listing.
+func firstLine(text string) string {
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		return strings.TrimSpace(text[:i])
+	}
+	return strings.TrimSpace(text)
 }
 
 // find returns the first top-level symbol matching kind and name.
