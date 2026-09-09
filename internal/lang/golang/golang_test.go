@@ -560,3 +560,99 @@ func equalStrings(a, b []string) bool {
 	}
 	return true
 }
+
+// TestListsBodylessDeclarations covers the kinds that carry no body. They were
+// invisible until this existed: a file of nothing but sentinel errors reported
+// zero symbols, and nothing could open a constant even once it was named.
+func TestListsBodylessDeclarations(t *testing.T) {
+	const src = `package p
+
+import "errors"
+
+// MaxRetries caps the loop.
+const MaxRetries = 3
+
+const (
+	// KindA is the first.
+	KindA = "a"
+	KindB = "b"
+)
+
+var (
+	// ErrOne is one.
+	ErrOne = errors.New("one")
+	ErrTwo = errors.New("two")
+)
+
+// Handler handles an int.
+type Handler func(int) error
+
+// Point stays a struct.
+type Point struct{ X int }
+
+func Do() { const local = 1; _ = local }
+`
+	source, err := Go{}.Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+
+	sigs, err := Go{}.ListSignatures(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]core.SymbolKind{}
+	for _, s := range sigs {
+		got[s.Name] = s.Kind
+	}
+	want := map[string]core.SymbolKind{
+		"MaxRetries": core.KindConst,
+		"KindA":      core.KindConst,
+		"KindB":      core.KindConst,
+		"ErrOne":     core.KindVar,
+		"ErrTwo":     core.KindVar,
+		"Handler":    core.KindType,
+		"Point":      core.KindStruct,
+		"Do":         core.KindFunc,
+	}
+	for name, kind := range want {
+		if got[name] != kind {
+			t.Errorf("%s is listed as %q, want %q", name, got[name], kind)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("listed %d symbols, want %d: %v", len(got), len(want), got)
+	}
+	// A constant declared inside a function body is a local detail, not part of
+	// the file's surface.
+	if _, listed := got["local"]; listed {
+		t.Error("a constant local to a function was listed as a top-level symbol")
+	}
+
+	t.Run("each one can be opened", func(t *testing.T) {
+		for _, s := range sigs {
+			text, err := Go{}.ReadDeclaration(source, core.SymbolID{Kind: s.Kind, Name: s.Name, Container: s.Container})
+			if err != nil {
+				t.Errorf("%s %s: %v", s.Kind, s.Name, err)
+				continue
+			}
+			if !strings.Contains(text, s.Name) {
+				t.Errorf("%s %s: declaration does not mention it:\n%s", s.Kind, s.Name, text)
+			}
+		}
+	})
+
+	t.Run("a grouped entry is addressed alone", func(t *testing.T) {
+		// Widening a grouped var to its whole block would make two edits on two
+		// sentinels overlap, and the batch would be rejected.
+		text, err := Go{}.ReadDeclaration(source, core.SymbolID{Kind: core.KindVar, Name: "ErrOne"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(text, "ErrTwo") {
+			t.Errorf("reading ErrOne returned the whole var block:\n%s", text)
+		}
+	})
+}

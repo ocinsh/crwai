@@ -54,6 +54,16 @@ const (
 	queryInterfaces = `(type_declaration (type_spec name: (type_identifier) @name type: (interface_type))) @iface`
 	// queryStructs matches struct type declarations.
 	queryStructs = `(type_declaration (type_spec name: (type_identifier) @name type: (struct_type))) @struct`
+
+	// queryConsts, queryVars and queryTypeSpecs match the NON-CALLABLE top-level
+	// declarations. They capture the individual specification, not the enclosing
+	// declaration, because Go groups them: a single `var ( ... )` block holds many
+	// independent symbols and each has to be addressable on its own. declOf widens
+	// a lone spec back to its declaration so the `const`/`var`/`type` keyword is
+	// not lost.
+	queryConsts    = `(const_spec name: (identifier) @name) @spec`
+	queryVars      = `(var_spec name: (identifier) @name) @spec`
+	queryTypeSpecs = `(type_spec name: (type_identifier) @name type: (_) @underlying) @spec`
 )
 
 // Compile-time assertions: Go satisfies the read interfaces (via Language) and the
@@ -143,6 +153,10 @@ func (Go) ListSignatures(src core.Source) ([]core.Signature, error) {
 		}
 	}
 
+	if err := listDeclarations(src, add); err != nil {
+		return nil, err
+	}
+
 	sort.Slice(entries, func(i, j int) bool { return entries[i].start < entries[j].start })
 	out := make([]core.Signature, len(entries))
 	for i, e := range entries {
@@ -197,6 +211,19 @@ func (Go) ReadStruct(src core.Source, id core.SymbolID) (string, error) {
 	return withDoc(decl, src.Bytes()), nil
 }
 
+// ReadDeclaration returns the full declaration text of any symbol id names,
+// whatever its kind: a function or method, an interface, a struct, or one of the
+// const/var/type declarations that have no dedicated reader. An empty Kind
+// searches every kind by name, which is what a caller that copied a name out of a
+// listing has to hand.
+func (g Go) ReadDeclaration(src core.Source, id core.SymbolID) (string, error) {
+	decl, ok := g.locate(src, id)
+	if !ok {
+		return "", fmt.Errorf("%w: %s", core.ErrSymbolNotFound, id.Name)
+	}
+	return withDoc(decl, src.Bytes()), nil
+}
+
 // ResolveEdits maps each Edit to a concrete byte span on src: it locates the
 // target symbol by identity and returns the [start, end) span of the WHOLE symbol
 // (the declaration, doc comments excluded). It does not mutate src or touch disk —
@@ -217,16 +244,30 @@ func (g Go) ResolveEdits(src core.Source, edits []core.Edit) ([]core.ResolvedEdi
 	return out, nil
 }
 
-// locate dispatches to the right finder by symbol kind.
+// locate dispatches to the right finder by symbol kind. An empty kind is not an
+// error: it tries every finder in turn, so a caller holding only a name still
+// resolves it. Callables come first because they are what a name usually means.
 func (g Go) locate(src core.Source, id core.SymbolID) (ts.Node, bool) {
 	switch id.Kind {
 	case core.KindInterface:
 		return locateType(src, id.Name, queryInterfaces, "iface")
 	case core.KindStruct:
 		return locateType(src, id.Name, queryStructs, "struct")
-	default:
+	case core.KindConst, core.KindVar, core.KindType:
+		return locateDeclaration(src, id)
+	case core.KindFunc, core.KindMethod:
 		return g.locateFunc(src, id)
 	}
+	if decl, ok := g.locateFunc(src, id); ok {
+		return decl, true
+	}
+	if decl, ok := locateType(src, id.Name, queryStructs, "struct"); ok {
+		return decl, true
+	}
+	if decl, ok := locateType(src, id.Name, queryInterfaces, "iface"); ok {
+		return decl, true
+	}
+	return locateDeclaration(src, id)
 }
 
 // locateFunc finds the function/method declaration node matching id (by name and
@@ -262,6 +303,152 @@ func (Go) locateFunc(src core.Source, id core.SymbolID) (ts.Node, bool) {
 		}
 	})
 	return found, ok
+}
+
+// declarationKinds pairs each non-callable query with the kind it reports. Order
+// is irrelevant: ListSignatures sorts every entry by position afterwards.
+var declarationKinds = []struct {
+	query string
+	kind  core.SymbolKind
+}{
+	{queryConsts, core.KindConst},
+	{queryVars, core.KindVar},
+	{queryTypeSpecs, core.KindType},
+}
+
+// listDeclarations visits every top-level const, var and plain named type in src
+// and calls add for each. A type spec whose underlying type is a struct or an
+// interface is skipped: ListSignatures already reports those under their own kind,
+// with their own reader.
+func listDeclarations(src core.Source, add func(start uint, sig core.Signature)) error {
+	b := src.Bytes()
+	for _, dk := range declarationKinds {
+		if err := runQuery(src, dk.query, func(q *ts.Query, m *ts.QueryMatch) {
+			caps := captures(q, m)
+			name, hasName := caps["name"]
+			spec, hasSpec := caps["spec"]
+			if !hasName || !hasSpec || !isTopLevel(spec) {
+				return
+			}
+			if under, ok := caps["underlying"]; ok && isStructOrInterface(under) {
+				return
+			}
+			decl := declOf(spec)
+			add(decl.StartByte(), core.Signature{
+				Kind: dk.kind,
+				Name: name.Utf8Text(b),
+				Text: firstLine(decl.Utf8Text(b)),
+				Doc:  docOf(decl, b),
+			})
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// locateDeclaration finds the const/var/type declaration named by id. An empty
+// Kind matches any of the three, which is what a caller reaching for a name it
+// read in a listing needs.
+func locateDeclaration(src core.Source, id core.SymbolID) (ts.Node, bool) {
+	b := src.Bytes()
+	for _, dk := range declarationKinds {
+		if id.Kind != "" && id.Kind != dk.kind {
+			continue
+		}
+		var found ts.Node
+		var ok bool
+		_ = runQuery(src, dk.query, func(q *ts.Query, m *ts.QueryMatch) {
+			if ok {
+				return
+			}
+			caps := captures(q, m)
+			name, hasName := caps["name"]
+			spec, hasSpec := caps["spec"]
+			if !hasName || !hasSpec || !isTopLevel(spec) || name.Utf8Text(b) != id.Name {
+				return
+			}
+			if under, hasUnder := caps["underlying"]; hasUnder && isStructOrInterface(under) {
+				return
+			}
+			found, ok = declOf(spec), true
+		})
+		if ok {
+			return found, true
+		}
+	}
+	return ts.Node{}, false
+}
+
+// declOf widens a specification to the node that best represents the symbol: the
+// enclosing declaration when it holds exactly one spec, so `const MaxRetries = 3`
+// keeps its keyword and its doc comment sits directly above it, and the spec
+// itself inside a grouped block, so replacing one entry of a `var ( ... )` never
+// rewrites the other nine.
+//
+// It widens only through a declaration node. A grouped `var` wraps its specs in a
+// var_spec_list, and widening to that would return the parenthesised group rather
+// than the one symbol asked for.
+func declOf(spec ts.Node) ts.Node {
+	parent := spec.Parent()
+	if parent == nil || !isDeclaration(*parent) {
+		return spec
+	}
+	siblings := 0
+	for i := uint(0); i < parent.NamedChildCount(); i++ {
+		if parent.NamedChild(i).Kind() == spec.Kind() {
+			siblings++
+		}
+	}
+	if siblings == 1 {
+		return *parent
+	}
+	return spec
+}
+
+// isDeclaration reports whether n is one of the three declaration nodes that own
+// a specification.
+func isDeclaration(n ts.Node) bool {
+	switch n.Kind() {
+	case "const_declaration", "var_declaration", "type_declaration":
+		return true
+	}
+	return false
+}
+
+// isTopLevel reports whether a specification belongs to a file-level declaration
+// rather than to one inside a function body, which a bare query would also match.
+//
+// It climbs rather than checking a fixed depth, because the Go grammar is not
+// symmetric here: a grouped `const` holds its specs directly, while a grouped
+// `var` interposes a var_spec_list. The climb stops at a block, which is what a
+// declaration inside a function body sits in.
+func isTopLevel(spec ts.Node) bool {
+	for node := spec.Parent(); node != nil; node = node.Parent() {
+		switch node.Kind() {
+		case "source_file":
+			return true
+		case "block":
+			return false
+		}
+	}
+	return false
+}
+
+// isStructOrInterface reports whether a type spec's underlying type is one the
+// dedicated struct/interface readers already own.
+func isStructOrInterface(under ts.Node) bool {
+	return under.Kind() == "struct_type" || under.Kind() == "interface_type"
+}
+
+// firstLine reduces a declaration to its opening line, so a var initialised with a
+// multi-line composite literal contributes one readable row to a listing instead
+// of a collapsed wall of text. The whole declaration is a get_declaration away.
+func firstLine(text string) string {
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		return strings.TrimSpace(text[:i])
+	}
+	return strings.TrimSpace(text)
 }
 
 // locateType finds a type declaration (interface or struct) by name using the
