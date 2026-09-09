@@ -106,6 +106,9 @@ func (TypeScript) ListSignatures(src core.Source) ([]core.Signature, error) {
 // the name, type parameters, parameters and return annotation as written.
 // Classes, interfaces and body-less symbols yield "".
 func signatureText(s sym, b []byte) string {
+	if s.light != "" {
+		return s.light
+	}
 	if s.text == nil || s.id.Kind == core.KindStruct || s.id.Kind == core.KindInterface {
 		return ""
 	}
@@ -200,10 +203,14 @@ func (TypeScript) ResolveEdits(src core.Source, edits []core.Edit) ([]core.Resol
 //   - params are the textual parameter declarations, in order.
 //   - returns is the return-type annotation, leading colon stripped ("" when none).
 type sym struct {
-	id      core.SymbolID
-	text    *sitter.Node
-	body    *sitter.Node
-	doc     string
+	id   core.SymbolID
+	text *sitter.Node
+	body *sitter.Node
+	doc  string
+	// light, when set, is the declaration line reported by ListSignatures. A
+	// binding has no body to stop at, so its light form cannot be derived from the
+	// nodes the way a callable's can.
+	light   string
 	params  []string
 	returns string
 }
@@ -298,13 +305,20 @@ func symbolsFrom(anchor, inner *sitter.Node, src []byte, container string) []sym
 		return interfaceSymbols(anchor, inner, src)
 
 	case "type_alias_declaration":
-		// Only object-typed aliases (`type P = { ... }`) map to a struct.
-		if val := inner.ChildByFieldName("value"); val == nil || val.Kind() != "object_type" {
-			return nil
-		}
 		name := inner.ChildByFieldName("name")
 		if name == nil {
 			return nil
+		}
+		// An object-typed alias (`type P = { ... }`) describes a shape and reads as
+		// a struct; any other alias (`type Id = string`) names a type and reads as
+		// one, through get_declaration.
+		if val := inner.ChildByFieldName("value"); val == nil || val.Kind() != "object_type" {
+			return []sym{{
+				id:    core.SymbolID{Kind: core.KindType, Name: name.Utf8Text(src), Container: container},
+				text:  anchor,
+				doc:   docFor(anchor, src),
+				light: firstLine(strings.TrimRight(anchor.Utf8Text(src), " \t\n;")),
+			}}
 		}
 		return []sym{{
 			id:   core.SymbolID{Kind: core.KindStruct, Name: name.Utf8Text(src)},
@@ -403,12 +417,21 @@ func varSymbols(anchor, inner *sitter.Node, src []byte, container string) []sym 
 		if d.Kind() != "variable_declarator" {
 			continue
 		}
-		val := d.ChildByFieldName("value")
-		if val == nil || !isFunctionValue(val.Kind()) {
-			continue
-		}
 		name := d.ChildByFieldName("name")
 		if name == nil {
+			continue
+		}
+		val := d.ChildByFieldName("value")
+		if val == nil || !isFunctionValue(val.Kind()) {
+			// Not a function: still a symbol, reported by how it binds. A binding
+			// keeps its own kind inside a namespace, where a callable becomes a
+			// method of that namespace.
+			out = append(out, sym{
+				id:    core.SymbolID{Kind: bindingKind(inner, src), Name: name.Utf8Text(src), Container: container},
+				text:  anchor,
+				doc:   docFor(anchor, src),
+				light: bindingText(inner, d, src),
+			})
 			continue
 		}
 		out = append(out, sym{
@@ -421,6 +444,62 @@ func varSymbols(anchor, inner *sitter.Node, src []byte, container string) []sym 
 		})
 	}
 	return out
+}
+
+// ReadDeclaration returns the whole text of any symbol id names, whatever its
+// kind, which is the only reader for the bindings that are not functions. An empty
+// Kind matches on name alone.
+func (TypeScript) ReadDeclaration(src core.Source, id core.SymbolID) (string, error) {
+	s, ok := lookupAny(collect(src.Root(), src.Bytes()), id)
+	if !ok {
+		return "", core.ErrSymbolNotFound
+	}
+	return withDoc(s.doc, s.text.Utf8Text(src.Bytes())), nil
+}
+
+// lookupAny returns the symbol matching id, ignoring the kind when id leaves it
+// empty so a bare name still resolves.
+func lookupAny(syms []sym, id core.SymbolID) (sym, bool) {
+	for _, s := range syms {
+		if s.id.Name != id.Name || s.id.Container != id.Container {
+			continue
+		}
+		if id.Kind == "" || s.id.Kind == id.Kind {
+			return s, true
+		}
+	}
+	return sym{}, false
+}
+
+// bindingKind reports how a variable declaration binds its names: `const` is a
+// constant, `let` and `var` are variables. TypeScript states this in the keyword
+// that opens the declaration.
+func bindingKind(decl *sitter.Node, src []byte) core.SymbolKind {
+	if decl.Kind() == "lexical_declaration" && strings.HasPrefix(strings.TrimSpace(decl.Utf8Text(src)), "const") {
+		return core.KindConst
+	}
+	return core.KindVar
+}
+
+// bindingText renders the light form of one binding: the declaration keyword and
+// the single declarator asked for, which is where the type annotation lives. It is
+// rebuilt rather than quoted verbatim because `const a = 1, b = 2` declares two
+// symbols, and quoting the whole line twice would render them as two identical rows.
+func bindingText(decl, declarator *sitter.Node, src []byte) string {
+	keyword := "var"
+	if first := decl.Child(0); first != nil {
+		keyword = first.Utf8Text(src)
+	}
+	return strings.TrimRight(keyword+" "+firstLine(declarator.Utf8Text(src)), " \t\n;")
+}
+
+// firstLine reduces a declaration to its opening line, so a binding to a
+// multi-line object literal contributes one readable row to a listing.
+func firstLine(text string) string {
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		return strings.TrimSpace(text[:i])
+	}
+	return strings.TrimSpace(text)
 }
 
 // moduleSymbols descends into a namespace/module body and collects its members,
