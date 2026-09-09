@@ -1,11 +1,15 @@
 # crwai — build, test, and install the tree-sitter MCP server / CLI.
-# The product name and version are sourced from the Go constant in core/version.go
-# so this Makefile never duplicates the version string.
+# The product name and version are sourced from the Go constant in
+# internal/core/version.go, so this Makefile never duplicates the version string:
+# `make version` asks the binary.
+#
+# There is deliberately no `tidy` target. `go mod tidy` resolves the Dart grammar's
+# broken nested module and breaks the build; the pin in go.mod is what holds it
+# together (see the note there).
 
 BIN     := crwai
 PKG     := ./cmd/crwai
 DISTDIR := dist
-VERSION := $(shell go run $(PKG) version 2>/dev/null | tr -dc '0-9.' )
 
 # CGO is required: the tree-sitter grammars are C. Do NOT set CGO_ENABLED=0.
 export CGO_ENABLED := 1
@@ -28,6 +32,13 @@ run: ## Run the MCP server over stdio (the default, no-subcommand action)
 test: ## Run the test suite
 	go test ./...
 
+.PHONY: check
+check: ## Run everything CI runs: format check, vet, tests, and the language harnesses
+	@test -z "$$(gofmt -l .)" || { echo "gofmt: these files need formatting:"; gofmt -l .; exit 1; }
+	go vet ./...
+	go test ./...
+	@for s in internal/lang/*/script.sh; do echo "--- $$s"; bash $$s || exit 1; done
+
 .PHONY: vet
 vet: ## Run go vet
 	go vet ./...
@@ -35,10 +46,6 @@ vet: ## Run go vet
 .PHONY: fmt
 fmt: ## Format all Go sources
 	gofmt -w .
-
-.PHONY: tidy
-tidy: ## Sync go.mod / go.sum
-	go mod tidy
 
 .PHONY: clean
 clean: ## Remove build artifacts
