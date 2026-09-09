@@ -79,17 +79,57 @@ common-file tool explicitly; nothing infers one.
 
 | Tool | Returns |
 | --- | --- |
-| `list_signatures` | signatures of every top-level symbol, each labelled with its kind and (for callables) its verbatim signature line — receiver and type parameters included — plus the owning container (the cheap map) |
+| `list_signatures` | every top-level symbol: functions, methods, interfaces, structs, and the constants, variables and named types that carry no body. Each entry is labelled with its kind, carries the container it belongs to, and — for everything but interfaces and structs — its verbatim declaration line, receiver and type parameters included. The cheap map |
 | `get_function_body` | a function's body only |
 | `get_function` | a whole function: doc + signature + body |
 | `read_interface` | a full interface definition |
 | `read_struct` | a full struct definition |
+| `get_declaration` | the full source of **any** symbol, whatever its kind |
 | `write_function` | applies N edits atomically (all-or-nothing) |
+
+**Documentation is opt-in.** `list_signatures` returns kinds, names and
+declaration lines by default and adds the doc comments only when asked
+(`"doc": true`, or `--doc` on the CLI). The doc is the heaviest part of a listing
+and a map is usually what is wanted.
+
+**Everything listed can be opened.** `get_declaration` is the only reader for a
+constant, a variable or a named type, and it works for functions, interfaces and
+structs too, so a caller holding a name from a listing never has to pick a reader.
+Leaving its `kind` empty searches every kind by name. A listing that named a
+symbol no reader accepted would be a promise the tool could not keep, and a test
+walks the whole bundled corpus to make sure that never happens.
 
 `write_function` addresses a symbol exactly the way the readers do: an edit naming
 a `container` and no `kind` targets that method, not a top-level function of the
 same name. An empty edit list is rejected rather than reported as a successful
 no-op.
+
+### What counts as a symbol
+
+The four original kinds (`func`, `method`, `interface`, `struct`) are joined by
+`const`, `var` and `type`. The mapping follows each language rather than forcing
+one shape on all of them:
+
+| Language | `const` | `var` | `type` |
+| --- | --- | --- | --- |
+| Go | `const` | package-level `var` | named type that is not a struct or interface |
+| Rust | `const` | `static` | `type` alias |
+| C | object-like `#define` | file-scope global | `typedef` over a non-aggregate |
+| C++ | `const`/`constexpr`, static members included | global and static members | `using` alias, `typedef` |
+| TypeScript | `const` | `let`, `var` | `type` alias that is not an object type |
+| JavaScript | `const` | `let`, `var` | none |
+| Dart | `const` | `final`, `var` | `typedef` |
+| Python | none | every module-level binding | PEP 695 `type` alias |
+| Java | `static final` field | `static` field | none |
+
+Python has no constant, so inferring one from an upper-case name would be a guess
+dressed as a fact; Dart's `final` binds once at run time, which makes it a
+variable rather than a compile-time constant. Java has no file-level declaration
+at all: a class body is its top level, so a static field is what binds once per
+program, while an instance field describes the type and is left to `read_struct`.
+An enum reads as a struct everywhere it exists, because `read_struct` already
+returns it whole. Declarations inside a function body are never listed: they are
+local detail, not part of the file's surface.
 
 ### Common-file tools
 
@@ -140,6 +180,7 @@ crwai function <file> <name> [-c <container>]   # whole function/method (alias: 
 crwai body <file> <name> [-c <container>]       # body only (alias: bd)
 crwai interface <file> <name>                   # alias: iface
 crwai struct <file> <name>                      # alias: st
+crwai declaration <file> <name> [-k <kind>]     # any symbol, any kind (alias: decl)
 
 # non-code documents
 crwai outline <file.md>                         # heading outline (alias: ol)
@@ -164,6 +205,7 @@ Three persistent flags apply to every command:
   refused with `path outside the configured root`, `../` traversal and symlinks
   included. Pass it when launching the MCP server: `crwai serve --root .`.
 - `--json` prints the machine-readable form instead of the tree, for scripting.
+- `--doc` / `-d` adds the documentation to a listing, which is left out by default.
 
 Results go to **stdout** and errors to **stderr**, so redirection and pipes behave:
 `crwai sig engine.go > map.txt` and `crwai sig engine.go | grep method` both work.
@@ -173,6 +215,7 @@ to, so same-named methods are told apart by where they sit rather than by a fiel
 you have to look up:
 
 ```
+$ crwai sig examples/typescript/shapes.ts --doc
 examples/typescript/shapes.ts
 typescript, 10 symbols
 ├─ interface  Shape
@@ -188,6 +231,17 @@ typescript, 10 symbols
 │             unit builds the unit circle.
 └─ func       function area(w: number, h: number): number
               area is a free function sharing its name with the methods above.
+```
+
+Without `--doc` the same listing is the map alone. A file that declares nothing
+but constants is no longer reported as empty:
+
+```
+$ crwai sig internal/core/version.go
+internal/core/version.go
+go, 2 symbols
+├─ const  const Name = "crwai"
+└─ const  const Version = "0.1.0"
 ```
 
 There are **no emoji** anywhere in the CLI. The kind of a symbol is a word in the
@@ -215,6 +269,12 @@ cpp,      err := crwai.New().Lang("cpp")        // force a language by name
 // The common-file surface, separate from Reader/Writer/Service.
 heads, err := svc.Outline("README.md")
 sec,   err := svc.Section("README.md", "Usage")
+
+// Declaration opens any symbol; an empty kind searches every kind by name.
+text, err := svc.Declaration("core/errors.go", "", "ErrStaleFile", "")
+
+// A listing keeps its documentation; StripDocs is how a front end makes it opt-in.
+sigs = crwai.StripDocs(sigs)
 ```
 
 `crwai.TargetFor(kind, name, container)` is how a front-end turns free text into a
@@ -245,9 +305,11 @@ The shared scaffolding is **implemented**: the parse helper and concrete `Source
 (`mcptool.Register`). On top of it, **Go** (`internal/lang/golang`, the reference
 implementation), **Python**, **Java**, **JavaScript**, **C**, **C++**, **Rust**,
 **Dart** and **TypeScript** are fully implemented — read (`list_signatures`,
-`get_function`, `get_function_body`, `read_struct`, `read_interface`) and atomic
-write (`write_function`), with their tree-sitter grammars wired and CGO required to
-build.
+`get_function`, `get_function_body`, `read_struct`, `read_interface`,
+`get_declaration`) and atomic write (`write_function`), with their tree-sitter
+grammars wired and CGO required to build. `ReadDeclaration` is part of the
+`Language` contract rather than optional, so a language that lists a symbol it
+cannot open does not compile.
 
 Both common-file tools are implemented and **wired end to end**: public facade, MCP
 tools, and CLI commands.
@@ -285,6 +347,14 @@ confinement including a symlink escape, the language registry, the Markdown
 round-trip, the Postman reader), the nine languages, and both common-file
 packages.
 
+Two tests guard the listing's central promise. `TestEverySymbolListedCanBeOpened`
+walks every bundled fixture in every language and calls `get_declaration` on every
+symbol the listing named, so nothing can be named and left unopenable.
+`TestBodylessDeclarationsAcrossLanguages` pins the kind each language reports for
+its constants, variables and named types, against one
+`examples/<language>/declarations.*` fixture per language; each language package
+asserts the same thing on its own fixture.
+
 Try it on the bundled corpus:
 
 ```sh
@@ -309,6 +379,12 @@ make build
 ./dist/crwai signatures examples/dart/math_rich.dart   # >= 20 symbols
 ./dist/crwai function   examples/dart/shapes.dart describe -c Rectangle  # disambiguated by container
 ./dist/crwai interface  examples/dart/shapes.dart Shape   # abstract class as interface
+
+# every symbol, including the ones that carry no body
+./dist/crwai signatures  internal/core/errors.go       # 10 sentinels, once invisible
+./dist/crwai signatures  examples/golang/declarations.go --doc
+./dist/crwai declaration internal/core/errors.go ErrStaleFile   # no kind needed
+./dist/crwai declaration internal/core/types.go KindFunc -k const
 
 # common-file tools
 ./dist/crwai outline  examples/markdown/sample.md

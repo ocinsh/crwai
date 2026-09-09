@@ -47,9 +47,47 @@ assertions still hold because value methods are in the pointer method set.
 
 ## 3. Implement the read capabilities
 
-`ListSignatures`, `FunctionBody`, `Function`, `ReadInterface`, `ReadStruct`. Each
-takes an already-parsed `core.Source` (never raw bytes — one parse per call) and
-addresses symbols by `core.SymbolID`, never by file offset.
+`ListSignatures`, `FunctionBody`, `Function`, `ReadInterface`, `ReadStruct`,
+`ReadDeclaration`. Each takes an already-parsed `core.Source` (never raw bytes —
+one parse per call) and addresses symbols by `core.SymbolID`, never by file offset.
+
+`ListSignatures` reports **seven kinds**, not four. Besides `func`, `method`,
+`interface` and `struct` it must list the declarations that carry no body:
+
+| Kind | What it is | Examples across the existing languages |
+| --- | --- | --- |
+| `const` | a name bound once, at compile time | Go `const`, Rust `const`, C object-like `#define`, C++ `const`/`constexpr`, TS/JS `const`, Dart `const`, Java `static final` field |
+| `var` | a name bound once per program, not per instance | Go package `var`, Rust `static`, C/C++ global, TS/JS `let`/`var`, Dart `final`/`var`, Python module binding, Java `static` field |
+| `type` | a named type that is neither a struct nor an interface | Go named type, Rust/C++ alias, C non-aggregate `typedef`, TS non-object `type`, Dart `typedef` |
+
+Three rules matter more than the table:
+
+- **Do not invent a kind the language does not have.** Python has no constant, so
+  every module-level binding is a `var`; inferring one from an upper-case name
+  would be a guess dressed as a fact. Dart's `final` binds at run time and is a
+  `var`. JavaScript and Java have no type alias, so they report no `type`.
+- **An enum reads as a `struct`** wherever the language has one, because
+  `read_struct` already returns it whole.
+- **Never list a declaration inside a function body.** It is local detail, not part
+  of the file's surface. Guard for it explicitly: a bare query or a recursive walk
+  will match it.
+
+For these kinds `Signature.Text` is the declaration line itself — that is where the
+declared type and the value are written — reduced to its first line when the
+declaration spans several. `Signature.Text` stays empty for interfaces and structs,
+whose name is their whole light form.
+
+`ReadDeclaration(src, id)` returns the full source of **any** symbol, documentation
+included. It is the only reader for `const`/`var`/`type`, and a superset of
+`ReadInterface`/`ReadStruct`. An **empty `id.Kind` must search every kind by name**:
+that is what a caller holding a name copied out of a listing has. Unlike
+`FunctionWriter` it is not optional — it is part of `core.Language`, so a language
+that lists a symbol it cannot open does not compile.
+
+Group carefully where the language groups. A Go `var ( ... )` block holds many
+independent symbols: each must be addressable on its own, or two edits on two
+sentinels would resolve to the same span and the batch would be rejected as
+overlapping. The same applies to `static int a, b;` in Java or C.
 
 If the language lacks a construct, the capability still has to exist (it is part of
 `core.Language`), so pick one of two patterns the codebase already uses:
@@ -126,9 +164,17 @@ These are not optional — a language without them is not done.
 - `examples/<name>/` — representative sources (one "big" file with ≥ 20 symbols,
   plus structs/classes, methods, and interfaces/traits where the language has
   them). Include the edge files other languages ship: UTF-8 BOM, CRLF line endings,
-  and a file with no trailing newline.
+  and a file with no trailing newline. Include a **`declarations.<ext>`** fixture
+  holding only bodyless declarations — a documented constant, a variable, a type
+  alias where the language has one, one aggregate, and one callable.
 - `internal/lang/<name>/<name>_test.go` — Go unit tests that parse the corpus and
-  assert every read capability and `ResolveEdits`. Edge cases that would break
+  assert every read capability and `ResolveEdits`, including a
+  `TestDeclarationsFixture` that pins the kind of every symbol in
+  `declarations.<ext>` and checks each one opens through `ReadDeclaration`. Note
+  that most `parse`/`load` helpers already register `Close` with `t.Cleanup`: a
+  second `defer src.Close()` double-frees the C-allocated tree and crashes the run.
+  Add the matching row to `TestBodylessDeclarationsAcrossLanguages` in
+  `crwai_test.go`, which states the cross-language contract in one place. Edge cases that would break
   `gofmt`/build if committed as real files (BOM/CRLF/no-newline) can be synthesized
   in the test from a clean example.
 - `internal/lang/<name>/script.sh` — copy an existing one (e.g.
