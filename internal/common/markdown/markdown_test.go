@@ -173,3 +173,83 @@ func TestCRLF(t *testing.T) {
 		t.Errorf("CRLF outline count = %d, want 6", len(got))
 	}
 }
+
+// TestWriteSectionsIsAtomic covers the write half of the tool: it goes through
+// the shared pipeline, so it must refuse an empty batch and an unknown heading
+// without touching the file, and a rewrite must leave the document's spacing
+// intact rather than welding the next heading onto the new text.
+func TestWriteSectionsIsAtomic(t *testing.T) {
+	write := func(t *testing.T, body string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "doc.md")
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	const doc = "# Top\n\nIntro.\n\n## One\n\nFirst.\n\n## Two\n\nSecond.\n"
+
+	t.Run("an empty batch is refused and changes nothing", func(t *testing.T) {
+		path := write(t, doc)
+		if _, err := WriteSections(path, nil); !errors.Is(err, core.ErrNoEdits) {
+			t.Fatalf("err = %v, want ErrNoEdits", err)
+		}
+		if got := readFile(t, path); got != doc {
+			t.Error("an empty batch rewrote the file")
+		}
+	})
+
+	t.Run("an unknown heading is refused and changes nothing", func(t *testing.T) {
+		path := write(t, doc)
+		_, err := WriteSections(path, []SectionEdit{{Path: "Top/Missing", NewText: "## Missing\n"}})
+		if !errors.Is(err, core.ErrSymbolNotFound) {
+			t.Fatalf("err = %v, want ErrSymbolNotFound", err)
+		}
+		if got := readFile(t, path); got != doc {
+			t.Error("a batch naming an unknown heading rewrote the file")
+		}
+	})
+
+	t.Run("overlapping edits are refused", func(t *testing.T) {
+		path := write(t, doc)
+		// "Top" contains "Top/One", so the two spans are nested.
+		_, err := WriteSections(path, []SectionEdit{
+			{Path: "Top", NewText: "# Top\n"},
+			{Path: "Top/One", NewText: "## One\n"},
+		})
+		if !errors.Is(err, core.ErrOverlappingEdits) {
+			t.Fatalf("err = %v, want ErrOverlappingEdits", err)
+		}
+		if got := readFile(t, path); got != doc {
+			t.Error("a rejected overlapping batch rewrote the file")
+		}
+	})
+
+	t.Run("a rewrite keeps the separation from the next heading", func(t *testing.T) {
+		path := write(t, doc)
+		res, err := WriteSections(path, []SectionEdit{{Path: "Top/One", NewText: "## One\n\nReplaced."}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Applied {
+			t.Fatal("the write did not apply")
+		}
+		want := "# Top\n\nIntro.\n\n## One\n\nReplaced.\n\n## Two\n\nSecond.\n"
+		if got := readFile(t, path); got != want {
+			t.Errorf("document =\n%q\nwant\n%q", got, want)
+		}
+		if res.Edits[0].Target.Kind != core.KindSection {
+			t.Errorf("target kind = %q, want %q", res.Edits[0].Target.Kind, core.KindSection)
+		}
+	})
+}
+
+// readFile returns a file's contents or fails the test.
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
