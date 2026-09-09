@@ -21,6 +21,7 @@ package markdown
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/ocinsh/crwai/internal/core"
@@ -222,12 +223,12 @@ func (d *Doc) ResolveSectionEdits(edits []SectionEdit) ([]core.ResolvedEdit, err
 		if !ok {
 			return nil, fmt.Errorf("markdown: %w: heading %q", core.ErrSymbolNotFound, e.Path)
 		}
-		start, end := d.span(i)
+		start, end := d.writeSpan(i)
 		out = append(out, core.ResolvedEdit{
 			StartByte: uint(start),
 			EndByte:   uint(end),
 			NewText:   e.NewText,
-			From:      core.SymbolID{Name: e.Path},
+			From:      core.SymbolID{Kind: core.KindSection, Name: e.Path},
 		})
 	}
 	return out, nil
@@ -243,6 +244,17 @@ func (d *Doc) indexOf(path string) (int, bool) {
 	return 0, false
 }
 
+// writeSpan returns the byte range a section EDIT replaces. It is span narrowed
+// to where Section stops reading: the blank lines that separate this section from
+// the next heading are left outside the span, so replacing a section with exactly
+// the text Section returned is a no-op, and replacing it with anything else keeps
+// the document's spacing instead of welding the next heading onto the new text.
+func (d *Doc) writeSpan(i int) (int, int) {
+	start, end := d.span(i)
+	content := strings.TrimRight(string(d.src[start:end]), "\n")
+	return start, start + len(content)
+}
+
 // span returns the [start, end) byte range of the section at index i: from its
 // heading line to the start of the next heading of equal-or-shallower level (or
 // end of file).
@@ -255,4 +267,41 @@ func (d *Doc) span(i int) (int, int) {
 		}
 	}
 	return start, len(d.src)
+}
+
+// WriteSections applies a batch of section edits to the Markdown file at path,
+// all-or-nothing, through the shared write path in core.ApplyResolved: the file is
+// read once, every edit is resolved to a byte span by heading identity, overlaps
+// are rejected, the edits are applied bottom-up in memory, the file is checked for
+// an external change, and the result is renamed into place atomically.
+//
+// It passes no validator: unlike a programming language, Markdown has no syntax an
+// edit could break, so step 6 of the write contract is a no-op here. An empty batch
+// is rejected with core.ErrNoEdits rather than rewriting the file for nothing.
+func WriteSections(path string, edits []SectionEdit) (core.WriteResult, error) {
+	// The seeded targets must match the identities ResolveSectionEdits records on
+	// its spans, or the pipeline cannot attribute a failure back to its edit.
+	targets := make([]core.SymbolID, len(edits))
+	for i, e := range edits {
+		targets[i] = core.SymbolID{Kind: core.KindSection, Name: e.Path}
+	}
+	res := core.WriteResult{Path: path, Edits: core.Outcomes(targets)}
+
+	if len(edits) == 0 {
+		return res, core.ErrNoEdits
+	}
+
+	original, err := os.ReadFile(path)
+	if err != nil {
+		return res, err
+	}
+	doc, err := Parse(original)
+	if err != nil {
+		return res, err
+	}
+	resolved, err := doc.ResolveSectionEdits(edits)
+	if err != nil {
+		return res, err
+	}
+	return core.ApplyResolved(path, original, resolved, &res, nil)
 }

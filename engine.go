@@ -38,7 +38,10 @@ type Engine struct {
 }
 
 // Compile-time assertion that Engine implements the full public surface.
-var _ Service = (*Engine)(nil)
+var (
+	_ Service    = (*Engine)(nil)
+	_ DocService = (*Engine)(nil)
+)
 
 // New builds an Engine with the supported languages registered (TypeScript ships
 // as two grammars: TypeScript for .ts and TSX for .tsx). The language
