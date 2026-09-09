@@ -75,6 +75,9 @@ func (JavaScript) ListSignatures(src core.Source) ([]core.Signature, error) {
 // name, parameters and any receiver are kept exactly as written. Classes and
 // body-less symbols have no such line and yield "".
 func signatureText(s sym, b []byte) string {
+	if s.light != "" {
+		return s.light
+	}
 	if s.text == nil || s.id.Kind == core.KindStruct || s.id.Kind == core.KindInterface {
 		return ""
 	}
@@ -158,10 +161,14 @@ func (JavaScript) ResolveEdits(src core.Source, edits []core.Edit) ([]core.Resol
 //   - doc is the extracted documentation ("" when none).
 //   - params are the textual parameter declarations, in order.
 type sym struct {
-	id     core.SymbolID
-	text   *sitter.Node
-	body   *sitter.Node
-	doc    string
+	id   core.SymbolID
+	text *sitter.Node
+	body *sitter.Node
+	doc  string
+	// light, when set, is the declaration line reported by ListSignatures. A
+	// binding has no body to stop at, so its light form cannot be derived from the
+	// nodes the way a callable's can.
+	light  string
 	params []string
 }
 
@@ -269,12 +276,19 @@ func symbolsFrom(anchor, inner *sitter.Node, src []byte) []sym {
 			if d.Kind() != "variable_declarator" {
 				continue
 			}
-			val := d.ChildByFieldName("value")
-			if val == nil || !isFunctionValue(val.Kind()) {
-				continue
-			}
 			name := d.ChildByFieldName("name")
 			if name == nil {
+				continue
+			}
+			val := d.ChildByFieldName("value")
+			if val == nil || !isFunctionValue(val.Kind()) {
+				// Not a function: still a symbol, reported by how it binds.
+				out = append(out, sym{
+					id:    core.SymbolID{Kind: bindingKind(inner, src), Name: name.Utf8Text(src)},
+					text:  anchor,
+					doc:   docFor(anchor, src),
+					light: bindingText(inner, d, src),
+				})
 				continue
 			}
 			out = append(out, sym{
@@ -288,6 +302,64 @@ func symbolsFrom(anchor, inner *sitter.Node, src []byte) []sym {
 		return out
 	}
 	return nil
+}
+
+// ReadDeclaration returns the whole text of any symbol id names, whatever its
+// kind, which is the only reader for the bindings that are not functions. An empty
+// Kind matches on name alone.
+func (JavaScript) ReadDeclaration(src core.Source, id core.SymbolID) (string, error) {
+	s, ok := lookupAny(collect(src.Root(), src.Bytes()), id)
+	if !ok {
+		return "", core.ErrSymbolNotFound
+	}
+	return withDoc(s.doc, s.text.Utf8Text(src.Bytes())), nil
+}
+
+// lookupAny returns the symbol matching id, ignoring the kind when id leaves it
+// empty so a bare name still resolves.
+func lookupAny(syms []sym, id core.SymbolID) (sym, bool) {
+	for _, s := range syms {
+		if s.id.Name != id.Name || s.id.Container != id.Container {
+			continue
+		}
+		if id.Kind == "" || s.id.Kind == id.Kind {
+			return s, true
+		}
+	}
+	return sym{}, false
+}
+
+// bindingKind reports how a variable declaration binds its names: `const` is a
+// constant, `let` and `var` are variables. JavaScript states this in the keyword
+// that opens the declaration.
+func bindingKind(decl *sitter.Node, src []byte) core.SymbolKind {
+	if decl.Kind() == "lexical_declaration" && strings.HasPrefix(strings.TrimSpace(decl.Utf8Text(src)), "const") {
+		return core.KindConst
+	}
+	return core.KindVar
+}
+
+// bindingText renders the light form of one binding: the declaration keyword and
+// the single declarator asked for. It is rebuilt rather than quoted verbatim
+// because `const a = 1, b = 2` declares two symbols, and quoting the whole line
+// twice would render them as two identical rows.
+func bindingText(decl, declarator *sitter.Node, src []byte) string {
+	keyword := "var"
+	if decl.NamedChildCount() > 0 {
+		if first := decl.Child(0); first != nil {
+			keyword = first.Utf8Text(src)
+		}
+	}
+	return strings.TrimRight(keyword+" "+firstLine(declarator.Utf8Text(src)), " \t\n;")
+}
+
+// firstLine reduces a declaration to its opening line, so a binding to a
+// multi-line object literal contributes one readable row to a listing.
+func firstLine(text string) string {
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		return strings.TrimSpace(text[:i])
+	}
+	return strings.TrimSpace(text)
 }
 
 // isFunctionValue reports whether a variable-declarator value is a function form.
