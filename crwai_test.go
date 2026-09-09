@@ -260,6 +260,239 @@ func TestPostmanReadsTheCollection(t *testing.T) {
 	}
 }
 
+// TestEverySymbolListedCanBeOpened is the promise the listing makes, checked
+// across every language and every bundled fixture: if list_signatures names a
+// symbol, get_declaration must return it. Before the const/var/type kinds existed
+// the listing was silent about them; now that it names them, nothing may be named
+// and unopenable.
+func TestEverySymbolListedCanBeOpened(t *testing.T) {
+	svc := crwai.New()
+	files, err := filepath.Glob("examples/*/*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no fixtures found")
+	}
+
+	checked := 0
+	for _, path := range files {
+		sigs, err := svc.ListSignatures(path)
+		if err != nil {
+			continue // a fixture of a format with no language, such as Markdown
+		}
+		for _, s := range sigs {
+			if _, err := svc.Declaration(path, string(s.Kind), s.Name, s.Container); err != nil {
+				t.Errorf("%s: listed %s %q (container %q) but could not open it: %v",
+					path, s.Kind, s.Name, s.Container, err)
+			}
+			checked++
+		}
+	}
+	if checked < 200 {
+		t.Errorf("only %d symbols checked; the corpus should be much larger", checked)
+	}
+}
+
+// TestListingReportsBodylessDeclarations pins the gap this fixed: a file that
+// declares nothing but constants used to report zero symbols.
+func TestListingReportsBodylessDeclarations(t *testing.T) {
+	sigs, err := crwai.New().ListSignatures("internal/core/version.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sigs) != 2 {
+		t.Fatalf("got %d symbols, want the 2 constants the file declares", len(sigs))
+	}
+	for _, s := range sigs {
+		if s.Kind != crwai.KindConst {
+			t.Errorf("%s is listed as %q, want %q", s.Name, s.Kind, crwai.KindConst)
+		}
+		// The declaration line is the light form: it is where the value and any
+		// declared type are written.
+		if !strings.Contains(s.Text, s.Name) {
+			t.Errorf("%s has no declaration line: %q", s.Name, s.Text)
+		}
+	}
+}
+
+// TestDeclarationFindsASymbolWithoutItsKind covers the shape a caller actually
+// has: a name copied out of a listing, and no wish to choose a reader for it.
+func TestDeclarationFindsASymbolWithoutItsKind(t *testing.T) {
+	svc := crwai.New()
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"ErrStaleFile", "errors.New"},    // a var inside a grouped declaration
+		{"BatchWrite", "func BatchWrite"}, // a function
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := "internal/core/errors.go"
+			if c.name == "BatchWrite" {
+				path = "internal/core/write.go"
+			}
+			got, err := svc.Declaration(path, "", c.name, "")
+			if err != nil {
+				t.Fatalf("Declaration: %v", err)
+			}
+			if !strings.Contains(got, c.want) {
+				t.Errorf("declaration does not contain %q:\n%s", c.want, got)
+			}
+		})
+	}
+}
+
+// TestDeclarationHonoursAnExplicitKind checks the kind is a filter and not a hint:
+// asking for a const named like a function must not return the function.
+func TestDeclarationHonoursAnExplicitKind(t *testing.T) {
+	svc := crwai.New()
+	if _, err := svc.Declaration("internal/core/write.go", "const", "BatchWrite", ""); !errors.Is(err, crwai.ErrSymbolNotFound) {
+		t.Errorf("err = %v, want ErrSymbolNotFound: BatchWrite is a function, not a constant", err)
+	}
+}
+
+// TestStripDocsClearsOnlyTheDocumentation checks the opt-in listing keeps
+// everything a map needs and drops only the part a map does not.
+func TestStripDocsClearsOnlyTheDocumentation(t *testing.T) {
+	full, err := crwai.New().ListSignatures("internal/core/version.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	documented := false
+	for _, s := range full {
+		if s.Doc != "" {
+			documented = true
+		}
+	}
+	if !documented {
+		t.Fatal("the fixture carries no documentation, so the test proves nothing")
+	}
+
+	stripped := crwai.StripDocs(full)
+	if len(stripped) != len(full) {
+		t.Fatalf("stripping changed the symbol count: %d, want %d", len(stripped), len(full))
+	}
+	for i, s := range stripped {
+		if s.Doc != "" {
+			t.Errorf("%s kept its documentation", s.Name)
+		}
+		if s.Name != full[i].Name || s.Kind != full[i].Kind || s.Text != full[i].Text {
+			t.Errorf("%s lost more than its documentation", s.Name)
+		}
+	}
+	// The original must be untouched: a caller may still want the full form.
+	if full[0].Doc == "" {
+		t.Error("StripDocs mutated the slice it was given")
+	}
+}
+
+// TestBodylessDeclarationsAcrossLanguages checks the same promise in all nine
+// languages against a fixture per language that holds nothing but declarations
+// without a body. It is one table rather than nine near-identical unit tests
+// because the behaviour under test is a cross-language contract: what a listing
+// covers, and what each kind means.
+//
+// The mapping is not uniform, and the exceptions are the point:
+//   - Python has no constant, so every module-level binding is a variable.
+//   - Dart's `final` binds once at run time and is a variable; only `const` is a
+//     constant.
+//   - Java has no file-level declaration: its class body is the top level, and a
+//     static field is what binds once per program.
+//   - An enum reads as a struct wherever the language has one, because
+//     read_struct already returns it whole.
+func TestBodylessDeclarationsAcrossLanguages(t *testing.T) {
+	cases := []struct {
+		path string
+		want map[string]crwai.SymbolKind
+	}{
+		{"examples/golang/declarations.go", map[string]crwai.SymbolKind{
+			"MaxRetries": crwai.KindConst, "KindLine": crwai.KindConst, "KindBlock": crwai.KindConst,
+			"ErrEmpty": crwai.KindVar, "ErrTooBig": crwai.KindVar, "ErrTooSmall": crwai.KindVar,
+			"Table": crwai.KindVar, "Handler": crwai.KindType, "Weight": crwai.KindType,
+			"Pair": crwai.KindStruct, "Sum": crwai.KindMethod,
+		}},
+		{"examples/python/declarations.py", map[string]crwai.SymbolKind{
+			"MAX_RETRIES": crwai.KindVar, "TIMEOUT": crwai.KindVar, "TABLE": crwai.KindVar,
+			"described": crwai.KindFunc,
+		}},
+		{"examples/rust/declarations.rs", map[string]crwai.SymbolKind{
+			"MAX": crwai.KindConst, "NAME": crwai.KindVar, "Id": crwai.KindType,
+			"Op": crwai.KindStruct, "Pair": crwai.KindStruct, "sum": crwai.KindFunc,
+		}},
+		{"examples/typescript/declarations.ts", map[string]crwai.SymbolKind{
+			"MAX": crwai.KindConst, "counter": crwai.KindVar, "Id": crwai.KindType,
+			"Pair": crwai.KindStruct, "sum": crwai.KindFunc,
+		}},
+		{"examples/javascript/declarations.js", map[string]crwai.SymbolKind{
+			"MAX": crwai.KindConst, "TABLE": crwai.KindConst,
+			"counter": crwai.KindVar, "legacy": crwai.KindVar, "sum": crwai.KindFunc,
+		}},
+		{"examples/java/Declarations.java", map[string]crwai.SymbolKind{
+			"Declarations": crwai.KindStruct, "MAX": crwai.KindConst,
+			"counter": crwai.KindVar, "sum": crwai.KindMethod,
+		}},
+		{"examples/c/declarations.c", map[string]crwai.SymbolKind{
+			"MAX": crwai.KindConst, "counter": crwai.KindVar, "Id": crwai.KindType,
+			"Point": crwai.KindStruct, "sum": crwai.KindFunc,
+		}},
+		{"examples/cpp/declarations.cpp", map[string]crwai.SymbolKind{
+			"kMax": crwai.KindConst, "counter": crwai.KindVar,
+			"Id": crwai.KindType, "Legacy": crwai.KindType, "sum": crwai.KindFunc,
+		}},
+		{"examples/dart/declarations.dart", map[string]crwai.SymbolKind{
+			"kMax": crwai.KindConst, "greeting": crwai.KindVar, "counter": crwai.KindVar,
+			"Handler": crwai.KindType, "sum": crwai.KindFunc,
+		}},
+	}
+
+	svc := crwai.New()
+	for _, c := range cases {
+		t.Run(filepath.Base(c.path), func(t *testing.T) {
+			sigs, err := svc.ListSignatures(c.path)
+			if err != nil {
+				t.Fatalf("ListSignatures: %v", err)
+			}
+			got := map[string]crwai.SymbolKind{}
+			for _, s := range sigs {
+				got[s.Name] = s.Kind
+			}
+			for name, kind := range c.want {
+				if got[name] != kind {
+					t.Errorf("%s is listed as %q, want %q", name, got[name], kind)
+				}
+			}
+			if len(got) != len(c.want) {
+				t.Errorf("listed %d symbols, want %d: %v", len(got), len(c.want), got)
+			}
+
+			// Every listed symbol opens, and a bodyless one shows the declaration
+			// line that carries its value or its declared type.
+			for _, s := range sigs {
+				text, err := svc.Declaration(c.path, string(s.Kind), s.Name, s.Container)
+				if err != nil {
+					t.Errorf("%s %s: %v", s.Kind, s.Name, err)
+					continue
+				}
+				if !strings.Contains(text, s.Name) {
+					t.Errorf("%s %s: declaration does not mention it:\n%s", s.Kind, s.Name, text)
+				}
+				switch s.Kind {
+				case crwai.KindConst, crwai.KindVar, crwai.KindType:
+					if s.Text == "" {
+						t.Errorf("%s %s has no declaration line", s.Kind, s.Name)
+					}
+				case crwai.KindStruct, crwai.KindInterface:
+					if s.Text != "" {
+						t.Errorf("%s %s should render as a bare name, got %q", s.Kind, s.Name, s.Text)
+					}
+				}
+			}
+		})
+	}
+}
+
 // copyFixture copies a repository fixture into a temp dir so a test that writes
 // never mutates the corpus, and returns the copy's path.
 func copyFixture(t *testing.T, src string) string {
