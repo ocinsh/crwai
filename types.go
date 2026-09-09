@@ -28,18 +28,12 @@ type (
 	// doc — enough to understand and call it without loading its body.
 	Signature = core.Signature
 
-	// Symbol is the located descriptor of a symbol: identity plus position, but
-	// not its body.
-	Symbol = core.Symbol
-
-	// Position is a 0-based line/column location within a file.
-	Position = core.Position
-
 	// Edit is a single requested modification, addressed by symbolic identity.
 	Edit = core.Edit
 
-	// RelativeRange addresses a span relative to a symbol's start (reserved for a
-	// future single-line edit granularity).
+	// RelativeRange addresses a span relative to a symbol's start. It is a
+	// reserved contract: no language resolves one in v1 (see
+	// ErrRelativeRangeNotImplemented) and the MCP schema does not offer it.
 	RelativeRange = core.RelativeRange
 
 	// WriteResult is the all-or-nothing outcome of a batch write.
@@ -59,13 +53,17 @@ const (
 	KindInterface = core.KindInterface
 	// KindStruct is a struct / class / record declaration.
 	KindStruct = core.KindStruct
+	// KindSection is a section of a non-code document, addressed by heading path.
+	// It is produced only by the common-file tools (see DocWriter).
+	KindSection = core.KindSection
 )
 
 // The sentinel errors the library can return, re-exported so callers can branch
-// on them with errors.Is without importing the internal package.
+// on them with errors.Is without importing the internal package. The set is
+// complete: every sentinel the internal core defines appears here.
 var (
 	// ErrUnsupportedLanguage means no registered language handles the file's
-	// extension.
+	// extension, or Lang was given an unknown language name.
 	ErrUnsupportedLanguage = core.ErrUnsupportedLanguage
 	// ErrSymbolNotFound means no symbol matched the requested identity.
 	ErrSymbolNotFound = core.ErrSymbolNotFound
@@ -80,21 +78,32 @@ var (
 	ErrStaleFile = core.ErrStaleFile
 	// ErrOverlappingEdits means two edits in a batch targeted overlapping spans.
 	ErrOverlappingEdits = core.ErrOverlappingEdits
-	// ErrNotImplemented marks a capability declared but not yet wired in this
-	// skeleton.
+	// ErrNoEdits means a write was requested with an empty batch; nothing was
+	// written.
+	ErrNoEdits = core.ErrNoEdits
+	// ErrRelativeRangeNotImplemented means an edit carried a RelativeRange, which
+	// v1 does not resolve. Replace the whole symbol instead.
+	ErrRelativeRangeNotImplemented = core.ErrRelativeRangeNotImplemented
+	// ErrPathOutsideRoot means the path addressed a file outside the root the
+	// engine was confined to with Root.
+	ErrPathOutsideRoot = core.ErrPathOutsideRoot
+	// ErrNotImplemented marks a declared capability that is not yet wired. No
+	// shipped path returns it; a language under construction does.
 	ErrNotImplemented = core.ErrNotImplemented
 )
 
 // LanguageInfo describes a supported language for discovery: its canonical name
 // and the file extensions it claims (each with a leading dot).
 type LanguageInfo struct {
-	Name       string
-	Extensions []string
+	Name       string   `json:"name"`
+	Extensions []string `json:"extensions"`
 }
 
 // ParseKind maps a kind string ("func", "method", "interface", "struct") to a
 // SymbolKind, defaulting to KindFunc for anything unrecognised. It is the
-// convenience used by front-ends that accept the kind as free text.
+// convenience used by front-ends that accept the kind as free text. Prefer
+// TargetFor when a container is also in play: it applies the same
+// container-implies-method rule the read methods use.
 func ParseKind(s string) SymbolKind {
 	switch s {
 	case "method":
@@ -106,4 +115,22 @@ func ParseKind(s string) SymbolKind {
 	default:
 		return KindFunc
 	}
+}
+
+// TargetFor builds the SymbolID a front-end addresses a symbol with, from free
+// text. It is the single place that reconciles kind and container, so the write
+// path resolves a symbol exactly the way the read path does.
+//
+// The rule: a non-empty container on a callable means a method. FunctionBody,
+// Function and the equivalent tools already infer this (they take a container and
+// no kind), so a caller that reads a method with container "Circle" and then
+// writes it back with the same container — and either no kind or the default
+// "func" — must hit the same symbol rather than ErrSymbolNotFound. An explicit
+// "interface" or "struct" kind is always honoured as given.
+func TargetFor(kind, name, container string) SymbolID {
+	k := ParseKind(kind)
+	if container != "" && k == KindFunc {
+		k = KindMethod
+	}
+	return SymbolID{Kind: k, Name: name, Container: container}
 }
