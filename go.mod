@@ -2,16 +2,13 @@ module github.com/ocinsh/crwai
 
 go 1.26
 
-// NOTE: This is a source-only skeleton. The two dependencies below are declared
-// so the import paths in the code are stable, but `go mod tidy` has NOT been run
-// and the grammar packages (e.g. github.com/tree-sitter/tree-sitter-go/bindings/go)
-// are deferred until languages are implemented. Resolving these requires a C
-// toolchain (CGO) — do not set CGO_ENABLED=0.
+// The tree-sitter grammars below are CGO packages: building, testing, and running
+// this module requires a C toolchain, and CGO_ENABLED must never be set to 0.
 //
-// require (
-// 	github.com/modelcontextprotocol/go-sdk latest
-// 	github.com/tree-sitter/go-tree-sitter  latest
-// )
+// Do NOT run `go mod tidy`. The Dart grammar's repository also publishes a broken
+// nested module at bindings/go, and tidy resolves to it and breaks the build; the
+// pinned require line below is what keeps the module working. The `make tidy`
+// target was removed for the same reason.
 
 require (
 	github.com/UserNobody14/tree-sitter-dart v0.0.0-20260520003023-a9bdfa3db2fb
