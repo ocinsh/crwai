@@ -7,8 +7,9 @@ import (
 	"github.com/ocinsh/crwai/cmd/crwai/ui"
 )
 
-// newFunctionCmd returns the whole function — doc, signature, and body — for full
-// context on one symbol before editing it.
+// newFunctionCmd prints a whole function or method: doc, signature, and body. It
+// is what to read before rewriting a symbol, so the replacement is written
+// against the real text.
 func newFunctionCmd() *cobra.Command {
 	var container string
 	cmd := &cobra.Command{
@@ -25,14 +26,24 @@ func newFunctionCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			kind := crwai.KindFunc
-			if container != "" {
-				kind = crwai.KindMethod
-			}
-			cmd.Println(ui.Symbol(args[0], kind, args[1], fn))
-			return nil
+			kind := crwai.TargetFor("func", args[1], container).Kind
+			return emit(cmd,
+				symbolOut{Path: args[0], Kind: kind.String(), Name: args[1], Container: container, Source: fn},
+				ui.Symbol(args[0], kind, args[1], container, fn))
 		},
 	}
-	cmd.Flags().StringVarP(&container, "container", "c", "", "enclosing receiver/class for a method (empty for top-level)")
+	cmd.Flags().StringVarP(&container, "container", "c", "",
+		"enclosing receiver/class for a method (empty for top-level)")
 	return cmd
+}
+
+// symbolOut is the machine form of a single located symbol, shared by the
+// function, body, interface, and struct commands so --json returns one shape for
+// all four.
+type symbolOut struct {
+	Path      string `json:"path"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Container string `json:"container,omitempty"`
+	Source    string `json:"source"`
 }

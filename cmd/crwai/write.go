@@ -10,47 +10,66 @@ import (
 	"github.com/ocinsh/crwai/cmd/crwai/ui"
 )
 
-// newWriteCmd surgically replaces one symbol with caller-supplied text. The new
-// text comes either inline (--text) or from a file (--from); the edit is applied
-// all-or-nothing by the library's write pipeline.
+// newWriteCmd is the CLI's single mutation verb: it replaces one target with text
+// the caller supplies, all-or-nothing, and never generates anything itself. The
+// target is a code symbol addressed by --name, or a Markdown section addressed by
+// --heading; the two are mutually exclusive because they are different contracts
+// on different files, and keeping one command means the atomic-replacement
+// discipline is stated once.
+//
+// The replacement text comes either inline (--text) or from a file (--from), and
+// --from is what you want for anything with newlines in it.
 func newWriteCmd() *cobra.Command {
-	var kind, name, container, text, from string
+	var kind, name, container, heading, text, from string
 	cmd := &cobra.Command{
 		Use:     "write <file>",
 		Aliases: []string{"wr"},
-		Short:   "Surgically replace a symbol with new source text (atomic)",
-		Args:    cobra.ExactArgs(1),
+		Short:   "Replace a symbol, or a Markdown section, with new text (atomic)",
+		Long: "Replace one target with caller-supplied text, all-or-nothing: if the\n" +
+			"replacement fails to resolve or breaks the file's syntax, nothing is written\n" +
+			"and the file is left untouched.\n\n" +
+			"Address a code symbol with --name (plus --container for a method, and --kind\n" +
+			"when the symbol is an interface or a struct), or a Markdown section with\n" +
+			"--heading, using the heading path the outline command prints.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if name == "" {
-				return fmt.Errorf("--name is required")
+			switch {
+			case name == "" && heading == "":
+				return fmt.Errorf("name the target with --name (a code symbol) or --heading (a Markdown section)")
+			case name != "" && heading != "":
+				return fmt.Errorf("use either --name or --heading, not both")
 			}
 			newText, err := resolveText(text, from)
 			if err != nil {
 				return err
 			}
-
-			edit := crwai.Edit{
-				Target:  crwai.SymbolID{Kind: crwai.ParseKind(kind), Name: name, Container: container},
-				NewText: newText,
-			}
 			eng, err := engineFor(cmd)
 			if err != nil {
 				return err
 			}
-			res, err := eng.Write(args[0], edit)
+
+			var res crwai.WriteResult
+			if heading != "" {
+				res, err = eng.WriteSections(args[0], crwai.SectionEdit{Path: heading, NewText: newText})
+			} else {
+				res, err = eng.Write(args[0], crwai.Edit{
+					Target:  crwai.TargetFor(kind, name, container),
+					NewText: newText,
+				})
+			}
 			if err != nil {
 				return err
 			}
-			printWriteResult(cmd, res)
-			return nil
+			return emit(cmd, res, ui.WriteResult(res))
 		},
 	}
 	f := cmd.Flags()
-	f.StringVarP(&name, "name", "n", "", "name of the target symbol (required)")
+	f.StringVarP(&name, "name", "n", "", "name of the target code symbol")
 	f.StringVarP(&kind, "kind", "k", "func", "symbol kind: func, method, interface, or struct")
 	f.StringVarP(&container, "container", "c", "", "enclosing receiver/class; empty for top-level")
-	f.StringVarP(&text, "text", "t", "", "replacement source text, inline")
-	f.StringVarP(&from, "from", "f", "", "read replacement source text from this file instead of --text")
+	f.StringVar(&heading, "heading", "", "heading path of the target Markdown section, e.g. Usage/Flags")
+	f.StringVarP(&text, "text", "t", "", "replacement text, inline")
+	f.StringVarP(&from, "from", "f", "", "read the replacement text from this file instead of --text")
 	return cmd
 }
 
@@ -66,11 +85,6 @@ func resolveText(text, from string) (string, error) {
 	case text != "":
 		return text, nil
 	default:
-		return "", fmt.Errorf("provide replacement text via --text or --from")
+		return "", fmt.Errorf("provide the replacement text with --text or --from")
 	}
-}
-
-// printWriteResult renders the all-or-nothing outcome of a batch write.
-func printWriteResult(cmd *cobra.Command, res crwai.WriteResult) {
-	cmd.Println(ui.WriteResult(res))
 }

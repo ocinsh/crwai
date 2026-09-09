@@ -20,15 +20,27 @@ func newServeCmd() *cobra.Command {
 		Short:   "Run the MCP server over stdio (default with no subcommand)",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return serve(cmd.Context())
+			return serve(cmd.Context(), rootDir(cmd))
 		},
 	}
 }
 
 // serve constructs the MCP server over the public crwai engine, registers every
 // decorated tool, and serves JSON-RPC over stdio until the transport closes.
-func serve(ctx context.Context) error {
+//
+// root, when non-empty, confines every tool call to that directory: a path
+// outside it is refused with ErrPathOutsideRoot instead of being read or written.
+// Without it the server addresses any path the process can reach, which is rarely
+// what an MCP client wants, so pass --root when launching it.
+func serve(ctx context.Context, root string) error {
 	eng := crwai.New()
+	if root != "" {
+		confined, err := eng.Root(root)
+		if err != nil {
+			return err
+		}
+		eng = confined
+	}
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    crwai.Name,
@@ -155,7 +167,8 @@ func registerDocTools(s *mcp.Server, eng *crwai.Engine) {
 
 // withLang returns the engine to use for a call: the base engine when name is
 // empty, otherwise a view forced to the named language (crwai.ErrUnsupportedLanguage
-// if the name is not registered).
+// if the name is not registered). The base engine's root confinement, if any, is
+// carried over by the copy Lang returns.
 func withLang(eng *crwai.Engine, name string) (*crwai.Engine, error) {
 	if name == "" {
 		return eng, nil

@@ -7,7 +7,7 @@ import (
 	"github.com/ocinsh/crwai/cmd/crwai/ui"
 )
 
-// newBodyCmd returns only the body of a function or method — the densest form
+// newBodyCmd prints only the body of a function or method: the densest read, for
 // when the signature is already known.
 func newBodyCmd() *cobra.Command {
 	var container string
@@ -25,14 +25,13 @@ func newBodyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			kind := crwai.KindFunc
-			if container != "" {
-				kind = crwai.KindMethod
-			}
-			cmd.Println(ui.Symbol(args[0], kind, args[1], body))
-			return nil
+			kind := crwai.TargetFor("func", args[1], container).Kind
+			return emit(cmd,
+				symbolOut{Path: args[0], Kind: kind.String(), Name: args[1], Container: container, Source: body},
+				ui.Symbol(args[0], kind, args[1], container, body))
 		},
 	}
-	cmd.Flags().StringVarP(&container, "container", "c", "", "enclosing receiver/class for a method (empty for top-level)")
+	cmd.Flags().StringVarP(&container, "container", "c", "",
+		"enclosing receiver/class for a method (empty for top-level)")
 	return cmd
 }
