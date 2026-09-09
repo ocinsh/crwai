@@ -78,7 +78,13 @@ func (Rust) ListSignatures(src core.Source) ([]core.Signature, error) {
 // body-less trait method declaration yields its whole text; structs and traits
 // yield "".
 func signatureText(kind core.SymbolKind, node *ts.Node, b []byte) string {
-	if kind != core.KindFunc && kind != core.KindMethod {
+	switch kind {
+	case core.KindConst, core.KindVar, core.KindType:
+		// No body to stop at: the declaration itself is the light form, and it is
+		// where the declared type is written.
+		return firstLine(node.Utf8Text(b))
+	case core.KindFunc, core.KindMethod:
+	default:
 		return ""
 	}
 	if body := node.ChildByFieldName("body"); body != nil {
@@ -159,6 +165,71 @@ func wholeSymbol(src core.Source, id core.SymbolID) (string, error) {
 	return string(b[docStart(n, b):n.EndByte()]), nil
 }
 
+// ReadDeclaration returns "doc + declaration" for any symbol id names, whatever
+// its kind, which is the only reader for the consts, statics and type aliases
+// that have none of their own. An empty Kind matches on name alone.
+func (Rust) ReadDeclaration(src core.Source, id core.SymbolID) (string, error) {
+	b := src.Bytes()
+	n := findAny(src.Root(), b, id)
+	if n == nil {
+		return "", core.ErrSymbolNotFound
+	}
+	return string(b[docStart(n, b):n.EndByte()]), nil
+}
+
+// findAny returns the declaration node matching id, ignoring the kind when id
+// leaves it empty so a bare name still resolves.
+func findAny(root *ts.Node, b []byte, id core.SymbolID) *ts.Node {
+	for _, l := range collect(root, b) {
+		if l.id.Name != id.Name || l.id.Container != id.Container {
+			continue
+		}
+		if id.Kind == "" || l.id.Kind == id.Kind {
+			return l.node
+		}
+	}
+	return nil
+}
+
+// declarationKind maps a bodyless item node to the kind it is reported as, and
+// reports whether the node is one at all. An enum is reported as a struct: it is a
+// data type read_struct returns whole, exactly as in C and Java.
+func declarationKind(kind string) (core.SymbolKind, bool) {
+	switch kind {
+	case "const_item":
+		return core.KindConst, true
+	case "static_item":
+		return core.KindVar, true
+	case "type_item":
+		return core.KindType, true
+	case "enum_item":
+		return core.KindStruct, true
+	}
+	return "", false
+}
+
+// atTopLevel reports whether a declaration belongs to the file or a module rather
+// than to the inside of a function, where a `const` is a local detail and not part
+// of the file's surface.
+func atTopLevel(n *ts.Node) bool {
+	for p := n.Parent(); p != nil; p = p.Parent() {
+		switch p.Kind() {
+		case "block", "function_item", "closure_expression":
+			return false
+		}
+	}
+	return true
+}
+
+// firstLine reduces a declaration to its opening line, so a static bound to a
+// multi-line literal contributes one readable row to a listing.
+func firstLine(text string) string {
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		return strings.TrimSpace(text[:i])
+	}
+	return strings.TrimSpace(text)
+}
+
 // located pairs a resolved SymbolID with the declaration node that produced it.
 type located struct {
 	id   core.SymbolID
@@ -192,6 +263,12 @@ func collect(root *ts.Node, b []byte) []located {
 			case "trait_item":
 				if name := fieldText(c, "name", b); name != "" {
 					out = append(out, located{core.SymbolID{Kind: core.KindInterface, Name: name}, c})
+				}
+			default:
+				if kind, ok := declarationKind(c.Kind()); ok && atTopLevel(c) {
+					if name := fieldText(c, "name", b); name != "" {
+						out = append(out, located{core.SymbolID{Kind: kind, Name: name}, c})
+					}
 				}
 			}
 			visit(c)
