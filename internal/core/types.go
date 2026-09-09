@@ -31,6 +31,12 @@ const (
 	KindInterface SymbolKind = "interface"
 	// KindStruct is a struct / class / record declaration.
 	KindStruct SymbolKind = "struct"
+	// KindSection is a section of a non-code document, addressed by heading path
+	// rather than by name and container. It is the one kind the COMMON-FILE tools
+	// produce (see internal/common/markdown): the write pipeline and its
+	// WriteResult are shared between the two families, so the outcome of a section
+	// rewrite has to say what it rewrote. No language ever emits it.
+	KindSection SymbolKind = "section"
 )
 
 // String renders a SymbolKind for diagnostics and tool output. The value already
