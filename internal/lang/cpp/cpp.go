@@ -229,6 +229,40 @@ func (c Cpp) symbols(src core.Source) []symbol {
 					visit(body, container)
 				}
 
+			case "enum_specifier":
+				// An enum is a data type read_struct returns whole, as in C and Java.
+				if name := childOfKind(child, "type_identifier"); name != nil {
+					out = append(out, mkDeclaration(core.KindStruct, nodeText(name, b), "", child, b))
+				}
+
+			case "preproc_def":
+				// An object-like macro is the C++ constant with no type. A
+				// function-like macro is left out: it has no body to read.
+				if name := child.ChildByFieldName("name"); name != nil {
+					out = append(out, mkDeclaration(core.KindConst, nodeText(name, b), "", child, b))
+				}
+
+			case "type_definition":
+				if name := child.ChildByFieldName("declarator"); name != nil {
+					kind := core.KindType
+					if t := child.ChildByFieldName("type"); t != nil {
+						switch t.Kind() {
+						case "struct_specifier", "class_specifier", "union_specifier", "enum_specifier":
+							kind = core.KindStruct
+						}
+					}
+					out = append(out, mkDeclaration(kind, nodeText(name, b), "", child, b))
+				}
+
+			case "alias_declaration":
+				// `using Id = int;` names a type without describing a shape.
+				if name := child.ChildByFieldName("name"); name != nil {
+					out = append(out, mkDeclaration(core.KindType, nodeText(name, b), "", child, b))
+				}
+
+			case "declaration", "field_declaration":
+				out = append(out, declarationSymbols(child, container, b)...)
+
 			case "translation_unit", "declaration_list", "field_declaration_list", "linkage_specification":
 				visit(child, container)
 			}
@@ -284,10 +318,115 @@ func mkType(spec, whole *sitter.Node, b []byte) symbol {
 	}
 }
 
+// ReadDeclaration returns the full text of any symbol id names, whatever its
+// kind, which is the only reader for the macros, globals, aliases and static
+// members that have none of their own. An empty Kind matches on name alone.
+func (c Cpp) ReadDeclaration(src core.Source, id core.SymbolID) (string, error) {
+	s, ok := c.findAny(src, id)
+	if !ok {
+		return "", core.ErrSymbolNotFound
+	}
+	b := src.Bytes()
+	return strings.TrimSpace(string(b[s.docStart:s.decl.EndByte()])), nil
+}
+
+// findAny returns the symbol matching id, ignoring the kind when id leaves it
+// empty so a bare name still resolves.
+func (c Cpp) findAny(src core.Source, id core.SymbolID) (symbol, bool) {
+	if id.Kind != "" {
+		return c.find(src, id)
+	}
+	for _, s := range c.symbols(src) {
+		if s.id.Name == id.Name && s.id.Container == id.Container {
+			return s, true
+		}
+	}
+	return symbol{}, false
+}
+
+// mkDeclaration builds a bodyless symbol of the given kind from a declaration
+// node. whole delimits the symbol for reads and writes.
+func mkDeclaration(kind core.SymbolKind, name, container string, whole *sitter.Node, b []byte) symbol {
+	return symbol{
+		id:       core.SymbolID{Kind: kind, Name: name, Container: container},
+		decl:     whole,
+		docStart: docStart(whole, b),
+	}
+}
+
+// declarationSymbols turns a `declaration` or `field_declaration` into the symbols
+// it binds. It returns nothing for a function prototype, which declares no storage,
+// and nothing for a non-static member, whose shape read_struct already returns.
+//
+// A member is only reported when it is static: a class body is where C++ puts its
+// per-program constants, exactly as a Java class body is, while an instance field
+// describes the type rather than the file's surface.
+func declarationSymbols(n *sitter.Node, container string, b []byte) []symbol {
+	typeText := ""
+	if t := n.ChildByFieldName("type"); t != nil {
+		typeText = nodeText(t, b)
+	}
+	prefix := strings.TrimSpace(string(b[n.StartByte():min(n.EndByte(), n.StartByte()+64)]))
+	if n.Kind() == "field_declaration" && !strings.Contains(prefix, "static") {
+		return nil
+	}
+	kind := core.KindVar
+	if strings.Contains(prefix, "const") || strings.Contains(typeText, "const") {
+		kind = core.KindConst
+	}
+
+	var out []symbol
+	for i := uint(0); i < n.NamedChildCount(); i++ {
+		name := declaredName(n.NamedChild(i))
+		if name == nil {
+			continue
+		}
+		out = append(out, mkDeclaration(kind, nodeText(name, b), container, n, b))
+	}
+	return out
+}
+
+// declaredName unwraps the declarator chain C++ wraps around a declared name -- an
+// initialiser, a pointer, a reference, an array -- down to the identifier itself.
+// It returns nil for a function declarator, because a prototype names a function
+// defined elsewhere, and nil for anything that binds no plain name.
+func declaredName(d *sitter.Node) *sitter.Node {
+	for d != nil {
+		switch d.Kind() {
+		case "identifier", "field_identifier":
+			return d
+		case "function_declarator":
+			return nil
+		case "init_declarator", "pointer_declarator", "reference_declarator",
+			"array_declarator", "parenthesized_declarator":
+			d = d.ChildByFieldName("declarator")
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
+// firstLine reduces a declaration to its opening line, so a global initialised
+// with a multi-line aggregate contributes one readable row to a listing.
+func firstLine(text string) string {
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		return strings.TrimSpace(text[:i])
+	}
+	return strings.TrimSpace(text)
+}
+
 // signatureOf renders the "light" signature of a symbol: declared name, textual
 // parameters and return type for callables, and the contiguous doc comment.
 func (c Cpp) signatureOf(s symbol, b []byte) core.Signature {
 	sig := core.Signature{Kind: s.id.Kind, Name: s.id.Name, Container: s.id.Container, Doc: docText(s, b)}
+	switch s.id.Kind {
+	case core.KindConst, core.KindVar, core.KindType:
+		// No body to stop at: the declaration itself is the light form, and it is
+		// where the declared type is written.
+		sig.Text = firstLine(nodeText(s.decl, b))
+		return sig
+	}
 	if s.body == nil {
 		return sig // a type has no params/returns
 	}

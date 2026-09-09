@@ -81,15 +81,22 @@ func TestListSignatures(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(sigs) != 8 {
-			t.Fatalf("got %d signatures, want 8", len(sigs))
+		if len(sigs) != 9 {
+			t.Fatalf("got %d signatures, want 9", len(sigs))
 		}
 		names := map[string]int{}
+		kinds := map[string]core.SymbolKind{}
 		for _, s := range sigs {
 			names[s.Name]++
+			kinds[s.Name] = s.Kind
 		}
 		if names["area"] != 3 { // free area + Circle::area + Rectangle::area
 			t.Errorf("got %d 'area' symbols, want 3", names["area"])
+		}
+		// A file-level constant is part of the file's surface and has to be listed:
+		// leaving it out made a header of nothing but constants look empty.
+		if kinds["PI"] != core.KindConst {
+			t.Errorf("PI is listed as %q, want %q", kinds["PI"], core.KindConst)
 		}
 	})
 
@@ -362,5 +369,48 @@ func TestSymbolNotFound(t *testing.T) {
 	_, err := Cpp{}.Function(parse(t, "shapes.cpp"), core.SymbolID{Kind: core.KindFunc, Name: "doesNotExist"})
 	if !errors.Is(err, core.ErrSymbolNotFound) {
 		t.Fatalf("got %v, want ErrSymbolNotFound", err)
+	}
+}
+
+// TestDeclarationsFixture covers the kinds that carry no body. Until they were
+// listed, a file holding nothing but them reported no symbols at all, and nothing
+// could open one even once it was named.
+func TestDeclarationsFixture(t *testing.T) {
+	src := parse(t, "declarations.cpp")
+
+	sigs, err := Cpp{}.ListSignatures(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]core.SymbolKind{}
+	for _, s := range sigs {
+		got[s.Name] = s.Kind
+	}
+	want := map[string]core.SymbolKind{
+		"kMax":    core.KindConst,
+		"counter": core.KindVar,
+		"Id":      core.KindType,
+		"Legacy":  core.KindType,
+		"sum":     core.KindFunc,
+	}
+	for name, kind := range want {
+		if got[name] != kind {
+			t.Errorf("%s is listed as %q, want %q", name, got[name], kind)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("listed %d symbols, want %d: %v", len(got), len(want), got)
+	}
+
+	// A listing that names a symbol it cannot open is a broken promise.
+	for _, s := range sigs {
+		text, err := Cpp{}.ReadDeclaration(src, core.SymbolID{Kind: s.Kind, Name: s.Name, Container: s.Container})
+		if err != nil {
+			t.Errorf("%s %s: %v", s.Kind, s.Name, err)
+			continue
+		}
+		if !strings.Contains(text, s.Name) {
+			t.Errorf("%s %s: declaration does not mention it:\n%s", s.Kind, s.Name, text)
+		}
 	}
 }
