@@ -1,0 +1,14 @@
+# Build artifacts. `make build` writes here and `make clean` removes it; the
+# binary must never be committed. Until this file existed, dist/ was ignored only
+# by a personal global gitignore, so the artifact would have been committed on any
+# other machine and in CI.
+/dist/
+
+# Go test and coverage output.
+*.test
+*.out
+coverage.txt
+
+# Editor and OS noise.
+.DS_Store
+*.swp
