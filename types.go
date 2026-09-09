@@ -65,6 +65,20 @@ const (
 	KindSection = core.KindSection
 )
 
+// StripDocs returns sigs with every Doc cleared. Documentation is the heaviest
+// part of a listing and is not always what the caller came for, so both front
+// ends make it opt-in and drop it here rather than each filtering its own output:
+// one place to strip means the tree and the JSON can never disagree about what a
+// listing contains.
+func StripDocs(sigs []Signature) []Signature {
+	out := make([]Signature, len(sigs))
+	for i, s := range sigs {
+		s.Doc = ""
+		out[i] = s
+	}
+	return out
+}
+
 // The sentinel errors the library can return, re-exported so callers can branch
 // on them with errors.Is without importing the internal package. The set is
 // complete: every sentinel the internal core defines appears here.

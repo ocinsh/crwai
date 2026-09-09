@@ -34,10 +34,12 @@ var ListSignatures = ToolDescriptor{
 		"is written. Documentation is opt-in: pass doc when you want it.",
 	Params: []ParamDoc{
 		{Name: "path", Description: "path to the source file to scan"},
+		{Name: "doc", Description: "optional: include each symbol documentation; omit for the cheap map of kinds, names and declaration lines"},
 		langParam,
 	},
 	Examples: []string{
 		`list_signatures{"path":"core/write.go"}`,
+		`list_signatures{"path":"core/errors.go","doc":true}`,
 		`list_signatures{"path":"widget.h","lang":"cpp"}`,
 	},
 }

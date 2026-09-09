@@ -6,13 +6,20 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ocinsh/crwai"
 	"github.com/ocinsh/crwai/cmd/crwai/ui"
 )
 
-// newSignaturesCmd maps a file: the cheapest entry point, no bodies loaded. The
-// listing is a tree, with every method nested under the type it belongs to, so
-// same-named methods on different types are told apart by where they sit rather
-// than by a field the reader has to look up.
+// newSignaturesCmd maps a file: the cheapest entry point, no bodies loaded. It
+// lists every top-level symbol, the constants, variables and named types that
+// carry no body included, so a file that declares only sentinels is not reported
+// as empty.
+//
+// The listing is a tree, with every method nested under the type it belongs to,
+// so same-named methods on different types are told apart by where they sit
+// rather than by a field the reader has to look up. Documentation is opt-in
+// behind --doc, because it is the heaviest part of the output and a map is often
+// all that is wanted.
 func newSignaturesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "signatures <file>",
@@ -27,6 +34,9 @@ func newSignaturesCmd() *cobra.Command {
 			sigs, err := eng.ListSignatures(args[0])
 			if err != nil {
 				return err
+			}
+			if !wantDoc(cmd) {
+				sigs = crwai.StripDocs(sigs)
 			}
 			meta := ui.Meta(langLabel(cmd, args[0]), len(sigs), "symbol", "symbols")
 			return emit(cmd, sigs, ui.Tree(args[0], meta, ui.SignatureNodes(sigs)))

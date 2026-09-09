@@ -17,6 +17,7 @@ const (
 	flagLang = "lang"
 	flagRoot = "root"
 	flagJSON = "json"
+	flagDoc  = "doc"
 )
 
 // Command groups. The help listing separates the two families the tool actually
@@ -63,6 +64,8 @@ func newRoot() *cobra.Command {
 		"confine every path to this directory; anything outside it is rejected")
 	f.Bool(flagJSON, false,
 		"print the machine-readable JSON form instead of the tree")
+	f.BoolP(flagDoc, "d", false,
+		"include documentation in a listing; omit for the cheap map")
 
 	root.AddGroup(
 		&cobra.Group{ID: groupCode, Title: "Code (tree-sitter, addressed by symbol):"},
@@ -129,6 +132,12 @@ func emit(cmd *cobra.Command, data any, human string) error {
 	}
 	_, err := fmt.Fprintln(out, human)
 	return err
+}
+
+// wantDoc reads the --doc flag.
+func wantDoc(cmd *cobra.Command) bool {
+	on, _ := cmd.Flags().GetBool(flagDoc)
+	return on
 }
 
 // newVersionCmd prints the product version (the same crwai.Version constant the

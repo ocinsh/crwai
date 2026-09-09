@@ -23,6 +23,7 @@ import (
 
 type ListSignaturesIn struct {
 	Path string `json:"path" jsonschema:"path to the source file to scan"`
+	Doc  bool   `json:"doc,omitempty" jsonschema:"include each symbol documentation; omit for the cheap map of kinds, names and declaration lines"`
 	Lang string `json:"lang,omitempty" jsonschema:"force a language by name (e.g. cpp), overriding file-extension detection; omit to detect from the extension"`
 }
 

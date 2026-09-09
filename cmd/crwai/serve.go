@@ -74,6 +74,9 @@ func registerCodeTools(s *mcp.Server, eng *crwai.Engine) {
 				return nil, mcptool.ListSignaturesOut{}, err
 			}
 			sigs, err := e.ListSignatures(in.Path)
+			if !in.Doc {
+				sigs = crwai.StripDocs(sigs)
+			}
 			return nil, mcptool.ListSignaturesOut{Signatures: sigs}, err
 		})
 
