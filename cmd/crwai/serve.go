@@ -65,7 +65,7 @@ func registerTools(s *mcp.Server, eng *crwai.Engine) {
 	registerDocTools(s, eng)
 }
 
-// registerCodeTools wires the six tree-sitter tools.
+// registerCodeTools wires the seven tree-sitter tools.
 func registerCodeTools(s *mcp.Server, eng *crwai.Engine) {
 	mcptool.Register(s, mcptool.ListSignatures,
 		func(ctx context.Context, _ *mcp.CallToolRequest, in mcptool.ListSignaturesIn) (*mcp.CallToolResult, mcptool.ListSignaturesOut, error) {
@@ -115,6 +115,16 @@ func registerCodeTools(s *mcp.Server, eng *crwai.Engine) {
 			}
 			def, err := e.Struct(in.Path, in.Name)
 			return nil, mcptool.ReadStructOut{Definition: def}, err
+		})
+
+	mcptool.Register(s, mcptool.GetDeclaration,
+		func(ctx context.Context, _ *mcp.CallToolRequest, in mcptool.GetDeclarationIn) (*mcp.CallToolResult, mcptool.GetDeclarationOut, error) {
+			e, err := withLang(eng, in.Lang)
+			if err != nil {
+				return nil, mcptool.GetDeclarationOut{}, err
+			}
+			decl, err := e.Declaration(in.Path, in.Kind, in.Name, in.Container)
+			return nil, mcptool.GetDeclarationOut{Declaration: decl}, err
 		})
 
 	// write_function delegates to the engine's all-or-nothing pipeline, which

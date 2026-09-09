@@ -23,11 +23,15 @@ var langParam = ParamDoc{
 // ListSignatures is the agent's default, cheapest entry point: a map of the file.
 var ListSignatures = ToolDescriptor{
 	Name: "list_signatures",
-	Mission: "List the signatures of every top-level symbol in a file. Use this " +
-		"first to map a file without loading any bodies, then fetch only the one " +
-		"symbol you need with get_function / read_interface / read_struct. Each " +
-		"entry carries its kind, so the listing also tells you which reader to " +
-		"call, and its container, so a method tells you which type it belongs to.",
+	Mission: "List every top-level symbol in a file: functions, methods, " +
+		"interfaces, structs, and the constants, variables and named types that " +
+		"carry no body. Use this first to map a file without loading anything, " +
+		"then fetch the one symbol you need with get_function, read_interface, " +
+		"read_struct, or get_declaration for any kind. Each entry carries its " +
+		"kind, so the listing also says which reader to call, its container, so a " +
+		"method says which type it belongs to, and for everything but interfaces " +
+		"and structs its verbatim declaration line, which is where a declared type " +
+		"is written. Documentation is opt-in: pass doc when you want it.",
 	Params: []ParamDoc{
 		{Name: "path", Description: "path to the source file to scan"},
 		langParam,
@@ -104,6 +108,29 @@ var ReadStruct = ToolDescriptor{
 	},
 	Examples: []string{
 		`read_struct{"path":"core/types.go","name":"Signature"}`,
+	},
+}
+
+// GetDeclaration is the reader of last resort, and the only reader for the kinds
+// that have none of their own.
+var GetDeclaration = ToolDescriptor{
+	Name: "get_declaration",
+	Mission: "Return the full source of any symbol list_signatures named, " +
+		"whatever its kind, documentation included. It is the only way to open a " +
+		"constant, a variable or a named type, and it works for functions, " +
+		"interfaces and structs too, so reach for it when you have a name from a " +
+		"listing and do not want to choose a reader. Leave kind empty to search " +
+		"every kind by name.",
+	Params: []ParamDoc{
+		{Name: "path", Description: "path to the source file"},
+		{Name: "name", Description: "name of the symbol, as reported by list_signatures"},
+		{Name: "kind", Description: "optional: func, method, interface, struct, const, var, or type; omit to search every kind"},
+		{Name: "container", Description: "optional: enclosing receiver/class for a method; empty for a top-level symbol"},
+		langParam,
+	},
+	Examples: []string{
+		`get_declaration{"path":"core/errors.go","name":"ErrStaleFile"}`,
+		`get_declaration{"path":"core/types.go","name":"KindFunc","kind":"const"}`,
 	},
 }
 

@@ -80,6 +80,20 @@ type ReadStructOut struct {
 	Definition string `json:"definition" jsonschema:"the full struct definition"`
 }
 
+// --- get_declaration ---
+
+type GetDeclarationIn struct {
+	Path      string `json:"path" jsonschema:"path to the source file"`
+	Name      string `json:"name" jsonschema:"name of the symbol, as reported by list_signatures"`
+	Kind      string `json:"kind,omitempty" jsonschema:"symbol kind: func, method, interface, struct, const, var, or type; omit to search every kind by name"`
+	Container string `json:"container,omitempty" jsonschema:"enclosing receiver/class for a method; empty for a top-level symbol"`
+	Lang      string `json:"lang,omitempty" jsonschema:"force a language by name (e.g. cpp), overriding file-extension detection; omit to detect from the extension"`
+}
+
+type GetDeclarationOut struct {
+	Declaration string `json:"declaration" jsonschema:"the full source of the symbol, documentation included"`
+}
+
 // --- write_function ---
 
 // EditIn is one requested edit, addressed by symbolic identity. Kind may be left

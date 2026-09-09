@@ -18,6 +18,7 @@ var tools = []struct {
 	{GetFunction, GetFunctionIn{}},
 	{ReadInterface, ReadInterfaceIn{}},
 	{ReadStruct, ReadStructIn{}},
+	{GetDeclaration, GetDeclarationIn{}},
 	{WriteFunction, WriteFunctionIn{}},
 	{OutlineMarkdown, OutlineMarkdownIn{}},
 	{ReadSection, ReadSectionIn{}},

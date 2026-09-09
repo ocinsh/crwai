@@ -77,7 +77,7 @@ func newRoot() *cobra.Command {
 	}
 	add(groupCode,
 		newSignaturesCmd(), newFunctionCmd(), newBodyCmd(),
-		newInterfaceCmd(), newStructCmd(),
+		newInterfaceCmd(), newStructCmd(), newDeclarationCmd(),
 	)
 	add(groupDocs,
 		newOutlineCmd(), newSectionCmd(), newRequestsCmd(), newRequestCmd(),
