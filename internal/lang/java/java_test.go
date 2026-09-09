@@ -287,3 +287,46 @@ func hashFile(t *testing.T, path string) [32]byte {
 	}
 	return sha256.Sum256(b)
 }
+
+// TestDeclarationsFixture covers the kinds that carry no body. Until they were
+// listed, a file holding nothing but them reported no symbols at all, and nothing
+// could open one even once it was named.
+func TestDeclarationsFixture(t *testing.T) {
+	src := parseFile(t, "Declarations.java")
+	defer src.Close()
+
+	sigs, err := Java{}.ListSignatures(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]core.SymbolKind{}
+	for _, s := range sigs {
+		got[s.Name] = s.Kind
+	}
+	want := map[string]core.SymbolKind{
+		"Declarations": core.KindStruct,
+		"MAX":          core.KindConst,
+		"counter":      core.KindVar,
+		"sum":          core.KindMethod,
+	}
+	for name, kind := range want {
+		if got[name] != kind {
+			t.Errorf("%s is listed as %q, want %q", name, got[name], kind)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("listed %d symbols, want %d: %v", len(got), len(want), got)
+	}
+
+	// A listing that names a symbol it cannot open is a broken promise.
+	for _, s := range sigs {
+		text, err := Java{}.ReadDeclaration(src, core.SymbolID{Kind: s.Kind, Name: s.Name, Container: s.Container})
+		if err != nil {
+			t.Errorf("%s %s: %v", s.Kind, s.Name, err)
+			continue
+		}
+		if !strings.Contains(text, s.Name) {
+			t.Errorf("%s %s: declaration does not mention it:\n%s", s.Kind, s.Name, text)
+		}
+	}
+}

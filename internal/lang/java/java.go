@@ -18,6 +18,7 @@ package java
 
 import (
 	"errors"
+	"sort"
 	"strings"
 
 	ts "github.com/tree-sitter/go-tree-sitter"
@@ -56,6 +57,9 @@ const (
 	kindInterface    = "interface_declaration"
 	kindRecord       = "record_declaration"
 	kindEnum         = "enum_declaration"
+	kindField        = "field_declaration"
+	kindDeclarator   = "variable_declarator"
+	kindModifiers    = "modifiers"
 	kindLineComment  = "line_comment"
 	kindBlockComment = "block_comment"
 )
@@ -81,23 +85,46 @@ func (Java) Parse(src []byte) (core.Source, error) {
 // disambiguated only when addressed by SymbolID through the reader/writer methods.
 func (Java) ListSignatures(src core.Source) ([]core.Signature, error) {
 	source := src.Bytes()
-	var out []core.Signature
+	type entry struct {
+		start uint
+		sig   core.Signature
+	}
+	var entries []entry
+	add := func(n *ts.Node, sig core.Signature) { entries = append(entries, entry{n.StartByte(), sig}) }
+
 	walk(src.Root(), func(n *ts.Node) {
 		switch n.Kind() {
 		case kindMethod, kindConstructor:
 			sig := methodSignature(n, source)
 			sig.Kind = core.KindMethod
-			out = append(out, sig)
+			add(n, sig)
 		case kindInterface:
 			sig := typeSignature(n, source)
 			sig.Kind = core.KindInterface
-			out = append(out, sig)
+			add(n, sig)
 		case kindClass, kindRecord, kindEnum:
 			sig := typeSignature(n, source)
 			sig.Kind = core.KindStruct
-			out = append(out, sig)
+			add(n, sig)
 		}
 	})
+	staticFields(src.Root(), source, func(decl, declarator *ts.Node, name string, kind core.SymbolKind) {
+		add(declarator, core.Signature{
+			Kind:      kind,
+			Name:      name,
+			Container: enclosingTypeName(decl, source),
+			Text:      fieldText(decl, declarator, source),
+			Doc:       precedingDoc(decl, source),
+		})
+	})
+
+	// Document order: a listing is read against the file it maps, and the fields
+	// are gathered in a second pass that would otherwise pile them at the end.
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].start < entries[j].start })
+	out := make([]core.Signature, len(entries))
+	for i, e := range entries {
+		out[i] = e.sig
+	}
 	return out, nil
 }
 
@@ -181,6 +208,133 @@ func (Java) ResolveEdits(src core.Source, edits []core.Edit) ([]core.ResolvedEdi
 		})
 	}
 	return out, nil
+}
+
+// ReadDeclaration returns the full text of any symbol id names, whatever its
+// kind, which is the only reader for the static fields that have none of their
+// own. An empty Kind searches every kind by name.
+func (j Java) ReadDeclaration(src core.Source, id core.SymbolID) (string, error) {
+	source := src.Bytes()
+	root := src.Root()
+
+	switch id.Kind {
+	case core.KindMethod, core.KindFunc:
+		if n := findMethod(root, source, id); n != nil {
+			return withDoc(n, source), nil
+		}
+	case core.KindInterface:
+		if n := findType(root, source, id.Name, kindInterface); n != nil {
+			return withDoc(n, source), nil
+		}
+	case core.KindStruct:
+		if n := findType(root, source, id.Name, kindClass, kindRecord, kindEnum); n != nil {
+			return withDoc(n, source), nil
+		}
+	case core.KindConst, core.KindVar:
+		if n := findField(root, source, id); n != nil {
+			return withDoc(n, source), nil
+		}
+	default:
+		// No kind given: try each finder in turn, callables first because that is
+		// what a bare name usually names.
+		if n := findMethod(root, source, id); n != nil {
+			return withDoc(n, source), nil
+		}
+		if n := findType(root, source, id.Name, kindClass, kindRecord, kindEnum, kindInterface); n != nil {
+			return withDoc(n, source), nil
+		}
+		if n := findField(root, source, id); n != nil {
+			return withDoc(n, source), nil
+		}
+	}
+	return "", core.ErrSymbolNotFound
+}
+
+// staticFields visits every field declared once per program rather than once per
+// instance, and calls fn with the declaration, the declared name and its kind.
+//
+// Java has no file-level declaration: a class body IS its top level, so a
+// `static final` constant here plays the part a package-level const plays in Go.
+// Instance fields are deliberately left out — they describe a type's shape, which
+// read_struct already returns whole.
+func staticFields(root *ts.Node, source []byte, fn func(decl, declarator *ts.Node, name string, kind core.SymbolKind)) {
+	walk(root, func(n *ts.Node) {
+		if n.Kind() != kindField {
+			return
+		}
+		mods := childOfKind(n, kindModifiers, source)
+		if !strings.Contains(mods, "static") {
+			return
+		}
+		kind := core.KindVar
+		if strings.Contains(mods, "final") {
+			kind = core.KindConst
+		}
+		// One declaration can bind several names (`static int a, b;`), and each is
+		// a symbol of its own.
+		for i := uint(0); i < n.NamedChildCount(); i++ {
+			d := n.NamedChild(i)
+			if d.Kind() != kindDeclarator {
+				continue
+			}
+			if name := nodeName(d, source); name != "" {
+				fn(n, d, name, kind)
+			}
+		}
+	})
+}
+
+// findField returns the field declaration binding id, or nil.
+func findField(root *ts.Node, source []byte, id core.SymbolID) *ts.Node {
+	var found *ts.Node
+	staticFields(root, source, func(decl, _ *ts.Node, name string, kind core.SymbolKind) {
+		if found != nil || name != id.Name {
+			return
+		}
+		if id.Kind != "" && id.Kind != kind {
+			return
+		}
+		if id.Container != "" && enclosingTypeName(decl, source) != id.Container {
+			return
+		}
+		found = decl
+	})
+	return found
+}
+
+// fieldText renders the light form of one field binding: its modifiers, its type
+// and the single declarator asked for. It is rebuilt rather than taken verbatim
+// because `static int a, b;` declares two symbols, and quoting the whole line
+// twice would render them as two identical rows.
+func fieldText(decl, declarator *ts.Node, source []byte) string {
+	parts := make([]string, 0, 3)
+	if mods := childOfKind(decl, kindModifiers, source); mods != "" {
+		parts = append(parts, mods)
+	}
+	if t := decl.ChildByFieldName("type"); t != nil {
+		parts = append(parts, t.Utf8Text(source))
+	}
+	parts = append(parts, firstLine(declarator.Utf8Text(source)))
+	return strings.Join(parts, " ")
+}
+
+// childOfKind returns the text of n's first child of the given kind, or "".
+func childOfKind(n *ts.Node, kind string, source []byte) string {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
+		if c := n.NamedChild(i); c.Kind() == kind {
+			return c.Utf8Text(source)
+		}
+	}
+	return ""
+}
+
+// firstLine reduces a declaration to its opening line, so a constant initialised
+// with a multi-line literal contributes one readable row to a listing.
+func firstLine(text string) string {
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		return strings.TrimSpace(text[:i])
+	}
+	return strings.TrimSpace(text)
 }
 
 // --- tree helpers -----------------------------------------------------------
