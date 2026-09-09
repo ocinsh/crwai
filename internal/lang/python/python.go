@@ -46,8 +46,13 @@ const (
 	kindExprStatement = "expression_statement"
 	kindString        = "string"
 	kindStringContent = "string_content"
+	kindAssignment    = "assignment"
+	kindTypeAlias     = "type_alias_statement"
+	kindIdentifier    = "identifier"
+	kindComment       = "comment"
 
 	fieldName       = "name"
+	fieldLeft       = "left"
 	fieldParameters = "parameters"
 	fieldReturnType = "return_type"
 	fieldBody       = "body"
@@ -79,10 +84,17 @@ func (Python) ListSignatures(src core.Source) ([]core.Signature, error) {
 		sig.Container = s.id.Container
 		// Callables carry a verbatim signature line (`def name(params) -> ret:`),
 		// up to but not including the body suite; classes fall back to the name.
-		if s.id.Kind == core.KindFunc || s.id.Kind == core.KindMethod {
+		switch s.id.Kind {
+		case core.KindFunc, core.KindMethod:
 			if body := s.node.ChildByFieldName(fieldBody); body != nil {
 				sig.Text = strings.TrimSpace(string(bytes[s.node.StartByte():body.StartByte()]))
 			}
+		case core.KindVar, core.KindType:
+			// No body, so no docstring: the declaration line is the light form and
+			// the comments above it are the documentation.
+			sig.Name = s.id.Name
+			sig.Text = firstLine(s.node.Utf8Text(bytes))
+			sig.Doc = commentsAbove(s.node, bytes)
 		}
 		out = append(out, sig)
 	}
@@ -128,6 +140,98 @@ func (Python) ReadStruct(src core.Source, id core.SymbolID) (string, error) {
 		return "", fmt.Errorf("%w: %s", core.ErrSymbolNotFound, id.Name)
 	}
 	return node.Utf8Text(src.Bytes()), nil
+}
+
+// ReadDeclaration returns the full text of any symbol id names, whatever its
+// kind: a function or method, a class, or one of the module-level variables and
+// type aliases that have no dedicated reader. An empty Kind searches every kind by
+// name, which is what a caller holding a name from a listing has.
+func (Python) ReadDeclaration(src core.Source, id core.SymbolID) (string, error) {
+	node, ok := findAny(src, id)
+	if !ok {
+		return "", fmt.Errorf("%w: %s", core.ErrSymbolNotFound, id.Name)
+	}
+	text := node.Utf8Text(src.Bytes())
+	// A class or function carries its documentation inside its body, but an
+	// assignment has no body, so its comments are prepended here.
+	if doc := commentsAbove(node, src.Bytes()); doc != "" {
+		return doc + "\n" + text, nil
+	}
+	return text, nil
+}
+
+// declarationsOf returns the module-level bindings that carry no body: plain
+// assignments and PEP 695 type aliases. Every assignment is reported as a variable,
+// never a constant: Python has no const, and inferring one from an upper-case name
+// would be a guess dressed as a fact.
+//
+// Only a binding to a bare identifier is reported. An attribute target (`obj.x = 1`)
+// or a tuple unpacking declares no single addressable name.
+func declarationsOf(node *ts.Node, bytes []byte) (symbol, bool) {
+	switch node.Kind() {
+	case kindExprStatement:
+		if node.NamedChildCount() == 0 {
+			return symbol{}, false
+		}
+		assign := node.NamedChild(0)
+		if assign.Kind() != kindAssignment {
+			return symbol{}, false
+		}
+		left := assign.ChildByFieldName(fieldLeft)
+		if left == nil || left.Kind() != kindIdentifier {
+			return symbol{}, false
+		}
+		return symbol{id: core.SymbolID{Kind: core.KindVar, Name: left.Utf8Text(bytes)}, node: node}, true
+	case kindTypeAlias:
+		name := node.ChildByFieldName(fieldLeft)
+		if name == nil {
+			return symbol{}, false
+		}
+		return symbol{id: core.SymbolID{Kind: core.KindType, Name: name.Utf8Text(bytes)}, node: node}, true
+	}
+	return symbol{}, false
+}
+
+// findAny returns the node of the symbol matching id, ignoring the kind when id
+// leaves it empty so a bare name still resolves.
+func findAny(src core.Source, id core.SymbolID) (*ts.Node, bool) {
+	for _, s := range collect(src) {
+		if s.id.Name != id.Name || s.id.Container != id.Container {
+			continue
+		}
+		if id.Kind == "" || s.id.Kind == id.Kind {
+			return s.node, true
+		}
+	}
+	return nil, false
+}
+
+// commentsAbove returns the contiguous comment lines immediately above node, the
+// only documentation a module-level binding can carry (a docstring needs a body).
+func commentsAbove(node *ts.Node, bytes []byte) string {
+	var lines []string
+	cur := node
+	for {
+		prev := cur.PrevSibling()
+		if prev == nil || prev.Kind() != kindComment {
+			break
+		}
+		if cur.StartPosition().Row == 0 || prev.EndPosition().Row != cur.StartPosition().Row-1 {
+			break
+		}
+		lines = append([]string{prev.Utf8Text(bytes)}, lines...)
+		cur = prev
+	}
+	return strings.Join(lines, "\n")
+}
+
+// firstLine reduces a declaration to its opening line, so a module constant bound
+// to a multi-line literal contributes one readable row to a listing.
+func firstLine(text string) string {
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		return strings.TrimSpace(text[:i])
+	}
+	return strings.TrimSpace(text)
 }
 
 // ResolveEdits maps each Edit to the byte span of its target symbol. It does not
@@ -184,6 +288,10 @@ func collect(src core.Source) []symbol {
 				node: node,
 			})
 			out = append(out, methodsOf(node, cname, bytes)...)
+		default:
+			if sym, ok := declarationsOf(node, bytes); ok {
+				out = append(out, sym)
+			}
 		}
 	}
 	return out
