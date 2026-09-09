@@ -171,19 +171,14 @@ func (e *Engine) Struct(path, name string) (string, error) {
 // kind is free text ("func", "method", "interface", "struct", "const", "var",
 // "type"). Leaving it empty is not an error and is the common case: the language
 // then searches every kind by name, which is all a caller that copied a name out
-// of a listing has. A language that has not implemented the capability yet
-// returns ErrNotImplemented.
+// of a listing has.
 func (e *Engine) Declaration(path, kind, name, container string) (string, error) {
 	l, src, err := e.open(path)
 	if err != nil {
 		return "", err
 	}
 	defer src.Close()
-	reader, ok := l.(core.DeclarationReader)
-	if !ok {
-		return "", ErrNotImplemented
-	}
-	return reader.ReadDeclaration(src, declTarget(kind, name, container))
+	return l.ReadDeclaration(src, declTarget(kind, name, container))
 }
 
 // declTarget builds the identity Declaration resolves. It differs from TargetFor

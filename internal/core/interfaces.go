@@ -46,7 +46,9 @@ type StructReader interface {
 // It is a superset of InterfaceReader and StructReader, which stay because a
 // named tool is easier for an agent to reach for than a generic one. Powers
 // `get_declaration`.
-
+//
+// Unlike FunctionWriter it is part of Language rather than optional: a language
+// that lists a symbol it cannot open is broken, so the compiler enforces the pair.
 type DeclarationReader interface {
 	// ReadDeclaration returns the declaration text of the symbol matching id,
 	// documentation included, exactly as the dedicated readers do for their own
@@ -91,4 +93,5 @@ type Language interface {
 	FunctionReader
 	InterfaceReader
 	StructReader
+	DeclarationReader
 }

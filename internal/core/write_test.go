@@ -290,6 +290,10 @@ func (readOnlyGo) ReadStruct(s core.Source, id core.SymbolID) (string, error) {
 	return golang.Go{}.ReadStruct(s, id)
 }
 
+func (readOnlyGo) ReadDeclaration(s core.Source, id core.SymbolID) (string, error) {
+	return golang.Go{}.ReadDeclaration(s, id)
+}
+
 // Compile-time assertion that readOnlyGo satisfies the read contract. That it does
 // NOT satisfy the write one is asserted at run time, below, because a missing
 // interface cannot be checked at compile time.
