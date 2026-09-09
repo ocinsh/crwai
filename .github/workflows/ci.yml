@@ -1,0 +1,68 @@
+# Continuous integration for crwai.
+#
+# The build is CGO: nine tree-sitter grammars are C, so CGO_ENABLED must stay 1
+# and a C toolchain must be present. Both runners ship one, and the workflow runs
+# on Linux and macOS because that is where the grammars are actually exercised.
+#
+# `go mod tidy` is never run here. The Dart grammar's repository publishes a broken
+# nested module and tidy resolves to it; the pin in go.mod is what keeps the build
+# working (see the note there). The verify job checks go.mod is unchanged instead.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CGO_ENABLED: "1"
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "these files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: build
+        run: make build
+
+      - name: test
+        run: go test ./...
+
+      - name: language harnesses
+        # The end-to-end scripts drive the built binary through both front-ends,
+        # the CLI and the MCP server, for every language.
+        run: |
+          status=0
+          for script in internal/lang/*/script.sh; do
+            echo "::group::$script"
+            bash "$script" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+      - name: go.mod is untouched
+        # A stray `go mod tidy` would drop the Dart pin and break the build.
+        run: git diff --exit-code go.mod go.sum
