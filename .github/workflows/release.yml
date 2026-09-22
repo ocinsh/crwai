@@ -4,12 +4,19 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vX.X.X tag to publish
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 env:
   CGO_ENABLED: '1'
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   test:
@@ -20,6 +27,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -27,9 +36,9 @@ jobs:
       - name: Validate release version
         shell: bash
         run: |
-          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
           current="$(go run ./cmd/crwai --json version | jq -r .version)"
-          test "$current" = "$GITHUB_REF_NAME"
+          test "$current" = "$RELEASE_TAG"
       - name: Check
         run: make check
       - name: Verify module files
@@ -51,6 +60,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -58,15 +69,15 @@ jobs:
       - name: Validate release version
         shell: bash
         run: |
-          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
           current="$(go run ./cmd/crwai --json version | jq -r .version)"
-          test "$current" = "$GITHUB_REF_NAME"
+          test "$current" = "$RELEASE_TAG"
       - name: Build package
         shell: bash
         run: |
           make build
           mkdir -p packages
-          tar -C dist -czf "packages/crwai_${GITHUB_REF_NAME}_${{ matrix.platform }}.tar.gz" crwai
+          tar -C dist -czf "packages/crwai_${RELEASE_TAG}_${{ matrix.platform }}.tar.gz" crwai
       - uses: actions/upload-artifact@v4
         with:
           name: crwai-${{ matrix.platform }}
@@ -79,6 +90,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v4
         with:
           pattern: crwai-*
@@ -92,4 +106,4 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" packages/* --verify-tag --generate-notes
+        run: gh release create "$RELEASE_TAG" packages/* --verify-tag --generate-notes

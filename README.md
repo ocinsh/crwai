@@ -362,7 +362,9 @@ Building requires a C toolchain — never `CGO_ENABLED=0`.
 language harnesses. GitHub Actions runs only when a `vX.X.X` tag is pushed.
 The [release workflow](.github/workflows/release.yml) runs these checks on Linux
 and macOS, builds the packages, and verifies that `go.mod` and `go.sum` remain
-unchanged.
+unchanged. Its publish job checks out the tagged repository before creating the
+GitHub Release. A failed publication can be retried from Actions with the
+existing tag as the manual workflow input.
 
 The Go suite covers the write pipeline directly (`internal/core/write_test.go`:
 empty batch, overlapping edits, broken syntax, stale file, permissions, temp-file

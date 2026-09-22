@@ -19,10 +19,14 @@ does not run a workflow.
    ```
 
 The tag workflow validates the version, runs the full check on Linux and macOS,
-and creates four CGO builds: Linux and macOS, each for amd64 and arm64. It
+and creates four CGO builds: Linux and macOS, each for amd64 and arm64. The
+publish job checks out the tagged repository before calling `gh release create`. It
 publishes `crwai_vX.X.X_<os>_<arch>.tar.gz` packages and `checksums.txt` in a
 GitHub Release. A failed check prevents publication. No tag or release is
-created by the commands in this guide until you run them.
+created by the commands in this guide until you run them. If publication fails
+after a tag push, push the workflow fix to the default branch and use Actions >
+release > Run workflow with the existing tag as the `tag` input. This uses the
+fixed workflow without moving or recreating the tag.
 
 ## Install and update
 
