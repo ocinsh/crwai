@@ -359,9 +359,10 @@ Building requires a C toolchain — never `CGO_ENABLED=0`.
 ### Verification
 
 `make check` runs the gofmt check, `go vet`, the Go test suite, and all nine
-language harnesses. CI also runs `make build` and checks that `go.mod` and
-`go.sum` remain unchanged. CI runs on Linux and macOS
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+language harnesses. GitHub Actions runs only when a `vX.X.X` tag is pushed.
+The [release workflow](.github/workflows/release.yml) runs these checks on Linux
+and macOS, builds the packages, and verifies that `go.mod` and `go.sum` remain
+unchanged.
 
 The Go suite covers the write pipeline directly (`internal/core/write_test.go`:
 empty batch, overlapping edits, broken syntax, stale file, permissions, temp-file
@@ -441,7 +442,7 @@ internal/release/               GitHub release lookup, package verification, bin
 cmd/crwai/                      CLI + MCP server front-ends (cobra commands, stdio)
 cmd/crwai/ui/                   terminal presentation layer (lipgloss, tree rendering)
 examples/                       deterministic fixtures, one directory per language/format
-.github/workflows/              CI and tagged release jobs for Linux and macOS
+.github/workflows/              tagged release checks and packages for Linux and macOS
 ```
 
 The dependency direction is one-way: `cmd/crwai` (and its `ui`) depend on the

@@ -71,7 +71,7 @@ The CLI has one mutation command, `write`, with mutually exclusive `--name` for 
 
 MCP input/output structs live in `internal/mcptool/schemas.go`. The SDK infers JSON schema from tags. Keep each descriptor's parameter text aligned with its input struct, including optional fields. Code tools accept a per-call language override; document tools do not. The server has seven code tools and five document tools.
 
-`make check` runs gofmt verification, `go vet ./...`, `go test ./...`, and all nine language harnesses. CI also runs `make build` and checks that `go.mod` and `go.sum` were not changed by a command. CI runs on Linux and macOS. `make build` writes `dist/crwai`. Avoid `make fmt` on a narrow change because it formats the entire repository.
+`make check` runs gofmt verification, `go vet ./...`, `go test ./...`, and all nine language harnesses. GitHub Actions runs only on a pushed `vX.X.X` tag: `.github/workflows/release.yml` checks Linux and macOS, builds the packages, and verifies that `go.mod` and `go.sum` were not changed by a command. `make build` writes `dist/crwai`. Avoid `make fmt` on a narrow change because it formats the entire repository.
 
 The Codex MCP setup uses the project-level `.codex/config.toml`. It resolves the Git root at startup, runs the built binary from `dist/`, and passes that root to `serve --root`. Keep the installation steps in `docs/install-codex.md` aligned with the configuration.
 

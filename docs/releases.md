@@ -2,7 +2,8 @@
 
 crwai releases use exact tags of the form `vX.X.X`. The `Version` constant in
 `internal/core/version.go` must match the tag. No release tag is present in this
-checkout. A tagged push activates the release workflow.
+checkout. Only a tagged push activates GitHub Actions; an ordinary branch push
+does not run a workflow.
 
 ## Publish a release
 
