@@ -31,9 +31,10 @@ fixed workflow without moving or recreating the tag.
 ## Install and update
 
 Run `crwai install` from the binary you intend to keep. The wizard detects the
-Codex and Claude Code command line clients and asks separately whether to add
-or replace each user-level crwai MCP entry. Each accepted entry uses the
-resolved path of that same binary. The wizard prints the path and makes no copy.
+Codex and Claude Code command line clients, including the CLI bundled with the
+Codex desktop app on macOS, and asks separately whether to configure each
+user-level crwai MCP entry. Each accepted entry uses the resolved path of that
+same binary. The wizard prints the path and makes no copy.
 Keep the binary at that path and restart the client after installation.
 
 The commands below query published GitHub Releases:

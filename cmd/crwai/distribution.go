@@ -36,12 +36,16 @@ func newInstallCmd() *cobra.Command {
 			detected := []string{}
 			input := bufio.NewReader(cmd.InOrStdin())
 			for _, client := range []string{"codex", "claude"} {
-				if _, err := exec.LookPath(client); err != nil {
+				clientBinary, err := clientExecutable(client)
+				if err != nil {
 					continue
 				}
 				detected = append(detected, client)
-				existing := clientRegistered(cmd, client)
+				existing := client == "claude" && clientRegistered(cmd, clientBinary)
 				question := "Install crwai for " + client + "? [y/N]: "
+				if client == "codex" {
+					question = "Configure Codex globally with this binary? [y/N]: "
+				}
 				if existing {
 					question = "Replace the existing crwai entry for " + client + "? [y/N]: "
 				}
@@ -52,7 +56,7 @@ func newInstallCmd() *cobra.Command {
 				if !confirmed {
 					continue
 				}
-				if err := registerClient(cmd, client, binary, existing); err != nil {
+				if err := registerClient(cmd, client, clientBinary, binary, existing); err != nil {
 					return fmt.Errorf("%s registration failed: %w", client, err)
 				}
 				configured = append(configured, client)
@@ -84,14 +88,42 @@ func confirmInstall(cmd *cobra.Command, input *bufio.Reader, question string) (b
 	return strings.EqualFold(strings.TrimSpace(answer), "y") || strings.EqualFold(strings.TrimSpace(answer), "yes"), nil
 }
 
-func clientRegistered(cmd *cobra.Command, client string) bool {
-	return exec.CommandContext(cmd.Context(), client, "mcp", "get", "crwai").Run() == nil
+// clientExecutable finds a CLI in PATH or the Codex desktop app bundle.
+func clientExecutable(client string) (string, error) {
+	if path, err := exec.LookPath(client); err == nil {
+		return path, nil
+	}
+	if client != "codex" {
+		return "", exec.ErrNotFound
+	}
+	if path := os.Getenv("CODEX_CLI_PATH"); path != "" {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return path, nil
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	for _, directory := range []string{filepath.Join(home, "Applications"), "/Applications"} {
+		for _, app := range []string{"ChatGPT.app", "Codex.app"} {
+			path := filepath.Join(directory, app, "Contents", "Resources", "codex")
+			if info, err := os.Stat(path); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+				return path, nil
+			}
+		}
+	}
+	return "", exec.ErrNotFound
+}
+
+func clientRegistered(cmd *cobra.Command, executable string) bool {
+	return exec.CommandContext(cmd.Context(), executable, "mcp", "get", "crwai").Run() == nil
 }
 
 // registerClient points the user-level MCP entry at the current executable.
-func registerClient(cmd *cobra.Command, client, binary string, replace bool) error {
+func registerClient(cmd *cobra.Command, client, executable, binary string, replace bool) error {
 	if replace {
-		if out, err := exec.CommandContext(cmd.Context(), client, "mcp", "remove", "crwai").CombinedOutput(); err != nil {
+		if out, err := exec.CommandContext(cmd.Context(), executable, "mcp", "remove", "crwai").CombinedOutput(); err != nil {
 			return fmt.Errorf("remove existing entry: %w: %s", err, strings.TrimSpace(string(out)))
 		}
 	}
@@ -104,7 +136,7 @@ func registerClient(cmd *cobra.Command, client, binary string, replace bool) err
 	default:
 		return fmt.Errorf("unsupported MCP client %q", client)
 	}
-	out, err := exec.CommandContext(cmd.Context(), client, args...).CombinedOutput()
+	out, err := exec.CommandContext(cmd.Context(), executable, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}

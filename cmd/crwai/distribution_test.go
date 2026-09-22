@@ -28,7 +28,7 @@ func TestRegisterClientUsesUserScopedMCPCommands(t *testing.T) {
 	for _, name := range []string{"codex", "claude"} {
 		cmd := &cobra.Command{}
 		cmd.SetContext(context.Background())
-		if err := registerClient(cmd, name, "/tmp/crwai original", false); err != nil {
+		if err := registerClient(cmd, name, name, "/tmp/crwai original", false); err != nil {
 			t.Fatalf("register %s: %v", name, err)
 		}
 		b, err := os.ReadFile(filepath.Join(home, name+"-args"))
@@ -90,7 +90,36 @@ func TestInstallWizardUsesCurrentExecutableWithoutCopy(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(home, ".local", "bin", "crwai")); !os.IsNotExist(err) {
 		t.Fatalf("installer copied executable: %v", err)
 	}
-	if !strings.Contains(prompts.String(), "Install crwai for codex?") || !strings.Contains(prompts.String(), "Install crwai for claude?") {
+	if !strings.Contains(prompts.String(), "Configure Codex globally with this binary?") || !strings.Contains(prompts.String(), "Install crwai for claude?") {
 		t.Fatalf("wizard prompts missing: %q", prompts.String())
+	}
+}
+
+func TestInstallDetectsBundledCodexCLI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	appCLI := filepath.Join(home, "Applications", "ChatGPT.app", "Contents", "Resources", "codex")
+	if err := os.MkdirAll(filepath.Dir(appCLI), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(appCLI, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$HOME/codex-args\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", home)
+	t.Setenv("CODEX_CLI_PATH", "")
+	cmd := newInstallCmd()
+	cmd.SetContext(context.Background())
+	cmd.SetIn(strings.NewReader("y\n"))
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	args, err := os.ReadFile(filepath.Join(home, "codex-args"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(args), "mcp add crwai") {
+		t.Fatalf("bundled CLI not used: %q", args)
 	}
 }

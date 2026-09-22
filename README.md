@@ -207,8 +207,11 @@ crwai update --to v1.2.3   # install a specific published release
 ```
 
 `install` detects the Codex and Claude Code CLIs and asks whether to configure
-each one. An existing crwai entry can be replaced after confirmation. The MCP
-entry points to the resolved path of the executable running the wizard; no copy
+each one. On macOS it also detects the Codex CLI bundled with the desktop app,
+even when `codex` is absent from `PATH`. Codex registration is user-level and
+replaces any user-level crwai entry after confirmation; project-level entries
+can still take precedence. An existing Claude crwai entry can be replaced after
+confirmation. The MCP entry points to the resolved path of the executable running the wizard; no copy
 is made. Keep that executable in place. From source, `make install` builds the
 binary and runs this command. `check-update` and `update` use
 GitHub Releases; updates verify the published SHA-256 checksum before replacing

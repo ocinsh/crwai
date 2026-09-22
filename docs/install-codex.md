@@ -23,8 +23,11 @@ codex mcp get crwai
 
 For a user-level installation usable across projects, run `./dist/crwai install`.
 The wizard asks whether to configure each detected client, including Codex and
-Claude Code. It records the resolved path to `dist/crwai` and does not copy the
-binary. Keep that file in place; `update` replaces it at the same path. The
+Claude Code. On macOS it detects the Codex CLI bundled with the desktop app even
+when `codex` is absent from `PATH`. Codex is registered at user level; a
+project-level entry may take precedence. It records the resolved path to
+`dist/crwai` and does not copy the binary. Keep that file in place; `update`
+replaces it at the same path. The
 wizard asks before replacing an existing entry. See `docs/releases.md` for
 release updates.
 
