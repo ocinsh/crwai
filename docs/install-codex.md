@@ -42,6 +42,10 @@ Restart Codex after changing the configuration or rebuilding the binary. In the
 Codex terminal interface, `/mcp` shows active servers. `codex mcp list` and
 `codex mcp get crwai` show the saved configuration. Ask Codex to list symbols in
 `examples/golang/basic.go` to check that the MCP tool is usable.
+The server's MCP initialization instructions recommend its symbol-level tools
+when they reduce context. `see_file` gives Codex a documented file overview
+without function bodies; `get_function` retrieves a body only when needed. No
+user `AGENTS.md` changes are required for this guidance.
 
 ## Troubleshooting
 

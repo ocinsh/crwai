@@ -517,3 +517,33 @@ func read(t *testing.T, path string) string {
 	}
 	return string(b)
 }
+
+func TestSeeFileRespectsRootAndDoesNotModifyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sample.go")
+	source := []byte("package sample\n// Answer is documented.\nfunc Answer() int { return 42 }\n")
+	if err := os.WriteFile(path, source, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	eng, err := crwai.New().Root(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := eng.SeeFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Signatures) != 1 || view.Signatures[0].Name != "Answer" || view.Signatures[0].Type != "func" {
+		t.Fatalf("unexpected index: %#v", view.Signatures)
+	}
+	if strings.Contains(view.Content, "return 42") || !strings.Contains(view.Content, "// Answer is documented.") {
+		t.Fatalf("unexpected content: %q", view.Content)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(source) {
+		t.Fatalf("source changed: %q, %v", got, err)
+	}
+	if _, err := eng.SeeFile(filepath.Join(dir, "..", "outside.go")); !errors.Is(err, crwai.ErrPathOutsideRoot) {
+		t.Fatalf("outside root: %v", err)
+	}
+}

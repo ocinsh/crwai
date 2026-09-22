@@ -122,6 +122,24 @@ func (e *Engine) ListSignatures(path string) ([]Signature, error) {
 	return l.ListSignatures(src)
 }
 
+// SeeFile returns source structure and documentation without callable bodies.
+func (e *Engine) SeeFile(path string) (FileView, error) {
+	l, src, err := e.open(path)
+	if err != nil {
+		return FileView{}, err
+	}
+	defer src.Close()
+	signatures, err := l.ListSignatures(src)
+	if err != nil {
+		return FileView{}, err
+	}
+	view := FileView{Signatures: make([]FileSignature, 0, len(signatures)), Content: lang.Preview(src, l.Name())}
+	for _, sig := range signatures {
+		view.Signatures = append(view.Signatures, FileSignature{Name: sig.Name, Type: string(sig.Kind), Container: sig.Container})
+	}
+	return view, nil
+}
+
 // FunctionBody returns only the body of the named function or method.
 func (e *Engine) FunctionBody(path, name, container string) (string, error) {
 	l, src, err := e.open(path)

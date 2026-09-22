@@ -79,7 +79,7 @@ func newRoot() *cobra.Command {
 		}
 	}
 	add(groupCode,
-		newSignaturesCmd(), newFunctionCmd(), newBodyCmd(),
+		newSignaturesCmd(), newSeeFileCmd(), newFunctionCmd(), newBodyCmd(),
 		newInterfaceCmd(), newStructCmd(), newDeclarationCmd(),
 	)
 	add(groupDocs,

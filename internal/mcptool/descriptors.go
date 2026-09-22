@@ -4,7 +4,7 @@ package mcptool
 // one naked core capability. Logic lives in the language implementations and the
 // common-file packages; these values only describe how an agent should use a tool.
 //
-// Two families are described here and they are not interchangeable. The first six
+// Two families are described here and they are not interchangeable. The first eight
 // are the CODE tools: they are backed by tree-sitter, address a symbol by identity
 // (kind, name, container), and resolve their language from the file extension. The
 // last five are the COMMON-FILE tools: no tree-sitter, no language resolution, and
@@ -18,6 +18,20 @@ package mcptool
 var langParam = ParamDoc{
 	Name:        "lang",
 	Description: "optional: force a language by name (see the langs listing), overriding file-extension detection; use it for an ambiguous .h header or a file with no extension",
+}
+
+// SeeFile provides a structural view with documentation but no callable bodies.
+var SeeFile = ToolDescriptor{
+	Name: "see_file",
+	Mission: "View a whole source file while omitting function and method bodies. " +
+		"Preserves imports, types, constants, signatures, and documentation. " +
+		"Returns a symbol index with name, type, and optional container. " +
+		"Use this when file-level context matters; call get_function only for a body you need.",
+	Params: []ParamDoc{
+		{Name: "path", Description: "path to the source file"},
+		langParam,
+	},
+	Examples: []string{`see_file{"path":"engine.go"}`},
 }
 
 // ListSignatures is the agent's default, cheapest entry point: a map of the file.

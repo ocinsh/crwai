@@ -13,6 +13,7 @@ var tools = []struct {
 	descriptor ToolDescriptor
 	in         any
 }{
+	{SeeFile, SeeFileIn{}},
 	{ListSignatures, ListSignaturesIn{}},
 	{GetFunctionBody, GetFunctionBodyIn{}},
 	{GetFunction, GetFunctionIn{}},

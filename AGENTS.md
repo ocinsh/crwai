@@ -43,7 +43,8 @@ Tree-sitter requires CGO and a C toolchain. Close every C-backed parser, tree, q
 | `internal/common/markdown/` | Explicit Markdown outline, section read, and section write |
 | `internal/common/postman/` | Explicit read-only Postman Collection v2.1 reader |
 | `internal/mcptool/schemas.go` | Typed MCP inputs and outputs; SDK infers JSON schema |
-| `internal/mcptool/descriptors.go` | Agent-facing descriptions for seven code and five document tools |
+| `internal/mcptool/descriptors.go` | Agent-facing descriptions for eight code and five document tools |
+| `internal/lang/preview.go` | Shared tree-sitter preview redaction for callable bodies |
 | `cmd/crwai/serve.go` | MCP registration and thin adapters to the public engine |
 | `cmd/crwai/root.go` | Cobra root, persistent flags, and shared output path |
 | `cmd/crwai/ui/` | Terminal tree, color, and plain-text rendering only |
@@ -61,6 +62,8 @@ Go, Python, Java, JavaScript, C, C++, Rust, Dart, and TypeScript are implemented
 
 `ListSignatures` reports seven kinds: `func`, `method`, `interface`, `struct`, `const`, `var`, and `type`. Every listed symbol must be openable through `ReadDeclaration`. `DeclarationReader` is therefore part of the required `core.Language` interface. `TestEverySymbolListedCanBeOpened` checks the bundled corpus. Never list declarations inside a function body. Consult the `What counts as a symbol` table in `README.md` for language-specific mapping. Enums are read as structs. Interface-like constructs vary by language; follow existing package behavior rather than inventing a construct.
 
+`Engine.SeeFile` parses once, lists symbols, and uses `internal/lang/preview.go` to replace callable bodies in the original source while preserving comments and documentation. Its JSON has top-level `signatures` and `content`; each signature has `name`, `type`, and optional `container`. Python docstrings stay visible. Keep this read-only view under tests for every supported language; it is a preview, not a compilable source transformation.
+
 Signature documentation is opt-in via CLI `--doc` or the MCP `doc` field. `StripDocs` is the common removal path. `ParseKind` must recognize every listed kind. `ReadDeclaration` accepts an empty kind to search by name across kinds. `TargetFor` handles the read/write identity convention.
 
 A language's `ResolveEdits` maps symbols to spans and never touches disk. The current MCP schema deliberately omits `Edit.Rel`: relative ranges are not implemented in any language. If extending the wire format, update schema, descriptor, facade, scripts, and docs together.
@@ -69,7 +72,7 @@ A language's `ResolveEdits` maps symbols to spans and never touches disk. The cu
 
 The CLI has one mutation command, `write`, with mutually exclusive `--name` for code and `--heading` for Markdown. Commands call the public facade and emit through `emit(cmd, data, human)` in `cmd/crwai/root.go`; results go to stdout and errors to stderr. Do not use Cobra `Print*` helpers. The UI owns colors and tree layout. Do not add emoji to CLI output. Box-drawing tree characters are allowed.
 
-MCP input/output structs live in `internal/mcptool/schemas.go`. The SDK infers JSON schema from tags. Keep each descriptor's parameter text aligned with its input struct, including optional fields. Code tools accept a per-call language override; document tools do not. The server has seven code tools and five document tools.
+MCP input/output structs live in `internal/mcptool/schemas.go`. The SDK infers JSON schema from tags. Keep each descriptor's parameter text aligned with its input struct, including optional fields. Code tools accept a per-call language override; document tools do not. The server has eight code tools and five document tools. Its initialization instructions recommend crwai when symbol-level work reduces context, without overriding user or repository instructions.
 
 `make check` runs gofmt verification, `go vet ./...`, `go test ./...`, and all nine language harnesses. GitHub Actions runs only on a pushed `vX.X.X` tag: `.github/workflows/release.yml` checks Linux and macOS, builds the packages, and verifies that `go.mod` and `go.sum` were not changed by a command. `make build` writes `dist/crwai`. Avoid `make fmt` on a narrow change because it formats the entire repository.
 

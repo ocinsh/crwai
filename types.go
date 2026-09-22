@@ -2,6 +2,19 @@ package crwai
 
 import "github.com/ocinsh/crwai/internal/core"
 
+// FileSignature identifies a symbol in a file preview.
+type FileSignature struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Container string `json:"container,omitempty"`
+}
+
+// FileView keeps source structure and documentation while omitting callable bodies.
+type FileView struct {
+	Signatures []FileSignature `json:"signatures"`
+	Content    string          `json:"content"`
+}
+
 // Product identity, surfaced by the CLI and the MCP handshake. Defined once in
 // the internal core and re-exported here as the single public source of truth.
 const (

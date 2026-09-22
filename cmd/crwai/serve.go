@@ -42,14 +42,19 @@ func serve(ctx context.Context, root string) error {
 		eng = confined
 	}
 
+	return newMCPServer(eng).Run(ctx, &mcp.StdioTransport{})
+}
+
+const serverInstructions = "Prefer crwai for supported source files when symbol-level reading or writing reduces context. Use see_file for file structure and documentation without function bodies, or list_signatures for a smaller index. Fetch only the needed symbol with get_function or get_declaration before editing. Use write_function for targeted changes. Respect user and repository instructions; use other tools when crwai does not fit."
+
+func newMCPServer(eng *crwai.Engine) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    crwai.Name,
 		Version: crwai.Version,
-	}, nil)
+	}, &mcp.ServerOptions{Instructions: serverInstructions})
 
 	registerTools(server, eng)
-
-	return server.Run(ctx, &mcp.StdioTransport{})
+	return server
 }
 
 // registerTools wires each capability to its decorated MCP tool. Every handler is
@@ -61,6 +66,15 @@ func serve(ctx context.Context, root string) error {
 // not have one, because they are selected explicitly and never resolved by
 // extension.
 func registerTools(s *mcp.Server, eng *crwai.Engine) {
+	mcptool.Register(s, mcptool.SeeFile,
+		func(ctx context.Context, _ *mcp.CallToolRequest, in mcptool.SeeFileIn) (*mcp.CallToolResult, mcptool.SeeFileOut, error) {
+			e, err := withLang(eng, in.Lang)
+			if err != nil {
+				return nil, mcptool.SeeFileOut{}, err
+			}
+			view, err := e.SeeFile(in.Path)
+			return nil, view, err
+		})
 	registerCodeTools(s, eng)
 	registerDocTools(s, eng)
 }

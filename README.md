@@ -80,6 +80,7 @@ common-file tool explicitly; nothing infers one.
 
 | Tool | Returns |
 | --- | --- |
+| `see_file` | `{signatures: [{name, type, container?}], content}`: the file's structure, comments and documentation, with callable bodies replaced by `use get_function` hints |
 | `list_signatures` | every top-level symbol: functions, methods, interfaces, structs, and the constants, variables and named types that carry no body. Each entry is labelled with its kind, carries the container it belongs to, and — for everything but interfaces and structs — its verbatim declaration line, receiver and type parameters included. The cheap map |
 | `get_function_body` | a function's body only |
 | `get_function` | a whole function: doc + signature + body |
@@ -92,6 +93,12 @@ common-file tool explicitly; nothing infers one.
 declaration lines by default and adds the doc comments only when asked
 (`"doc": true`, or `--doc` on the CLI). The doc is the heaviest part of a listing
 and a map is usually what is wanted.
+
+`see_file` provides more file-level context while still hiding function and
+method bodies. It preserves the original source around them, including imports,
+declarations and documentation; Python docstrings remain visible. Use
+`get_function` to open only a body that matters. This is a read-only preview,
+not valid source code for compilation.
 
 **Everything listed can be opened.** `get_declaration` is the only reader for a
 constant, a variable or a named type, and it works for functions, interfaces and
@@ -183,6 +190,7 @@ crwai langs                # list supported languages and extensions (alias: lng
 
 # code
 crwai signatures <file>                         # map a file (aliases: sig, ls)
+crwai see_file <file>                           # file preview without callable bodies
 crwai function <file> <name> [-c <container>]   # whole function/method (alias: fn)
 crwai body <file> <name> [-c <container>]       # body only (alias: bd)
 crwai interface <file> <name>                   # alias: iface
@@ -297,6 +305,9 @@ sec,   err := svc.Section("README.md", "Usage")
 
 // Declaration opens any symbol; an empty kind searches every kind by name.
 text, err := svc.Declaration("core/errors.go", "", "ErrStaleFile", "")
+
+// SeeFile keeps documentation and structure while hiding callable bodies.
+view, err := svc.SeeFile("engine.go")
 
 // A listing keeps its documentation; StripDocs is how a front end makes it opt-in.
 sigs = crwai.StripDocs(sigs)

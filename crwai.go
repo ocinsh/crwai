@@ -47,6 +47,9 @@ package crwai
 // need. A method or struct/interface that cannot be located returns
 // ErrSymbolNotFound; an unknown file extension returns ErrUnsupportedLanguage.
 type Reader interface {
+	// SeeFile returns the file with callable bodies hidden and a symbol index.
+	SeeFile(path string) (FileView, error)
+
 	// ListSignatures returns the signature of every top-level symbol in the file,
 	// with no bodies loaded — the cheapest way to map a file.
 	ListSignatures(path string) ([]Signature, error)

@@ -1,10 +1,20 @@
 package mcptool
 
 import (
+	"github.com/ocinsh/crwai"
 	"github.com/ocinsh/crwai/internal/common/markdown"
 	"github.com/ocinsh/crwai/internal/common/postman"
 	"github.com/ocinsh/crwai/internal/core"
 )
+
+// --- see_file ---
+
+type SeeFileIn struct {
+	Path string `json:"path" jsonschema:"path to the source file"`
+	Lang string `json:"lang,omitempty" jsonschema:"force a language by name, overriding file-extension detection"`
+}
+
+type SeeFileOut = crwai.FileView
 
 // Typed input/output structs, one pair per tool. The MCP SDK infers each tool's
 // JSON schema from these types; the `json` tags name the wire fields and the
