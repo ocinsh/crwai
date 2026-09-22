@@ -274,7 +274,7 @@ $ crwai sig internal/core/version.go
 internal/core/version.go
 go, 2 symbols
 ├─ const  const Name = "crwai"
-└─ const  const Version = "v0.1.0"
+└─ const  const Version = "v0.2.1"
 ```
 
 There are **no emoji** anywhere in the CLI. The kind of a symbol is a word in the

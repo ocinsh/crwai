@@ -38,7 +38,10 @@ jobs:
         run: |
           [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
           current="$(go run ./cmd/crwai --json version | jq -r .version)"
-          test "$current" = "$RELEASE_TAG"
+          if [ "$current" != "$RELEASE_TAG" ]; then
+            echo "Source version $current does not match release tag $RELEASE_TAG" >&2
+            exit 1
+          fi
       - name: Check
         run: make check
       - name: Verify module files
@@ -71,7 +74,10 @@ jobs:
         run: |
           [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
           current="$(go run ./cmd/crwai --json version | jq -r .version)"
-          test "$current" = "$RELEASE_TAG"
+          if [ "$current" != "$RELEASE_TAG" ]; then
+            echo "Source version $current does not match release tag $RELEASE_TAG" >&2
+            exit 1
+          fi
       - name: Build package
         shell: bash
         run: |

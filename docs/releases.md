@@ -1,29 +1,30 @@
 # Releases and updates
 
 crwai releases use exact tags of the form `vX.X.X`. The `Version` constant in
-`internal/core/version.go` must match the tag. No release tag is present in this
-checkout. Only a tagged push activates GitHub Actions; an ordinary branch push
-does not run a workflow.
+`internal/core/version.go` must match the tag. Only a tagged push activates
+GitHub Actions; an ordinary branch push does not run a workflow. A tag that
+already exists on the remote must not be moved. If a release fails because its
+source version differs from the tag, prepare the next version in a new commit
+and publish a new tag.
 
 ## Publish a release
 
-1. Change `internal/core/version.go` to the intended tag, for example `v1.2.3`.
+1. Change `internal/core/version.go` to the intended tag, for example `v0.2.1`.
 2. Update `README.md` and `AGENTS.md` for any behavior changes, then run
    `make check` and `make build`.
 3. Commit the release-ready state using the repository commit style.
 4. Create and push an annotated tag with the exact same version:
 
    ```sh
-   git tag -a v1.2.3 -m v1.2.3
-   git push origin v1.2.3
+   git tag -a v0.2.1 -m v0.2.1
+   git push origin v0.2.1
    ```
 
 The tag workflow validates the version, runs the full check on Linux and macOS,
 and creates four CGO builds: Linux and macOS, each for amd64 and arm64. The
 publish job checks out the tagged repository before calling `gh release create`. It
 publishes `crwai_vX.X.X_<os>_<arch>.tar.gz` packages and `checksums.txt` in a
-GitHub Release. A failed check prevents publication. No tag or release is
-created by the commands in this guide until you run them. If publication fails
+GitHub Release. A failed check prevents publication. If publication fails
 after a tag push, push the workflow fix to the default branch and use Actions >
 release > Run workflow with the existing tag as the `tag` input. This uses the
 fixed workflow without moving or recreating the tag.
