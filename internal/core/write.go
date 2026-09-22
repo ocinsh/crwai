@@ -176,8 +176,13 @@ func ApplyResolved(path string, original []byte, resolved []ResolvedEdit, res *W
 		return *res, ErrStaleFile
 	}
 
-	// 8. Persist atomically: temp file in the same dir, then rename over target.
-	if err := atomicWrite(path, buf); err != nil {
+	// 8. Follow the addressed file's symlink before the atomic rename. Renaming
+	// over the link itself would replace it and leave its target unchanged.
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return *res, err
+	}
+	if err := atomicWrite(target, buf); err != nil {
 		return *res, err
 	}
 

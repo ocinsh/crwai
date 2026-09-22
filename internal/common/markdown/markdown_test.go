@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -113,6 +114,47 @@ func TestDuplicateHeadingDisambiguation(t *testing.T) {
 	}
 	if install.Content == usage.Content {
 		t.Error("duplicate-named sections resolved to the same content")
+	}
+}
+
+// TestRepeatedHeadingPaths verifies identical siblings and their children have
+// unique paths that select the intended section for reads and writes.
+func TestRepeatedHeadingPaths(t *testing.T) {
+	const body = "# Guide\n## Notes\nFirst.\n### Detail\nFirst detail.\n## Notes\nSecond.\n### Detail\nSecond detail.\n"
+	d, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Guide", "Guide/Notes", "Guide/Notes/Detail", "Guide/Notes [2]", "Guide/Notes [2]/Detail"}
+	if got := paths(d.Outline()); !slices.Equal(got, want) {
+		t.Fatalf("paths = %v, want %v", got, want)
+	}
+	section, err := d.Section("Guide/Notes [2]")
+	if err != nil || !strings.Contains(section.Content, "Second.") {
+		t.Fatalf("second section = %+v, err = %v", section, err)
+	}
+	path := filepath.Join(t.TempDir(), "repeated.md")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WriteSections(path, []SectionEdit{{Path: "Guide/Notes [2]/Detail", NewText: "### Detail\nUpdated."}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, path); !strings.Contains(got, "First detail.") || !strings.Contains(got, "Updated.") || strings.Contains(got, "Second detail.") {
+		t.Fatalf("wrong section changed:\n%s", got)
+	}
+}
+
+// TestFenceWidthAndMarker keeps headings inside longer or differently marked
+// fenced blocks out of the outline.
+func TestFenceWidthAndMarker(t *testing.T) {
+	const body = "# Guide\n````md\n```\n## Hidden\n~~~\n````\n## Visible\n"
+	d, err := Parse([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := paths(d.Outline()), []string{"Guide", "Guide/Visible"}; !slices.Equal(got, want) {
+		t.Fatalf("paths = %v, want %v", got, want)
 	}
 }
 

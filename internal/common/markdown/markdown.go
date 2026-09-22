@@ -36,9 +36,8 @@ type Heading struct {
 	// stripped (e.g. "Prerequisites").
 	Text string `json:"text"`
 	// Path is the slash-joined chain of ancestor headings ending in this one
-	// (e.g. "Installation/Prerequisites"). It is the STABLE IDENTITY used to
-	// address a section, disambiguating headings that share the same Text under
-	// different parents.
+	// (e.g. "Installation/Prerequisites"). Repeated paths receive a numeric
+	// suffix such as "Installation/Notes [2]" so each heading is addressable.
 	Path string `json:"path"`
 	// Line is the 1-based line number of the heading line in the file.
 	Line uint `json:"line"`
@@ -90,9 +89,11 @@ type headRec struct {
 func Parse(src []byte) (*Doc, error) {
 	d := &Doc{src: src}
 	var ancestors []Heading // open ancestor chain, by level
+	seenPaths := make(map[string]bool)
 	offset := 0
 	lineNo := uint(0)
-	inFence := false
+	var fenceChar byte
+	var fenceWidth int
 	for _, raw := range strings.SplitAfter(string(src), "\n") {
 		if raw == "" {
 			break
@@ -102,11 +103,16 @@ func Parse(src []byte) (*Doc, error) {
 		lineNo++
 		line := strings.TrimRight(raw, "\r\n")
 
-		if isFence(line) {
-			inFence = !inFence
+		marker, width, rest, fenced := fence(line)
+		if fenceChar != 0 {
+			if fenced && marker == fenceChar && width >= fenceWidth && strings.TrimSpace(rest) == "" {
+				fenceChar = 0
+				fenceWidth = 0
+			}
 			continue
 		}
-		if inFence {
+		if fenced && (marker != '`' || !strings.Contains(rest, "`")) {
+			fenceChar, fenceWidth = marker, width
 			continue
 		}
 
@@ -117,15 +123,15 @@ func Parse(src []byte) (*Doc, error) {
 		for len(ancestors) > 0 && ancestors[len(ancestors)-1].Level >= level {
 			ancestors = ancestors[:len(ancestors)-1]
 		}
-		path := text
+		basePath := text
 		if len(ancestors) > 0 {
-			parts := make([]string, 0, len(ancestors)+1)
-			for _, a := range ancestors {
-				parts = append(parts, a.Text)
-			}
-			parts = append(parts, text)
-			path = strings.Join(parts, "/")
+			basePath = ancestors[len(ancestors)-1].Path + "/" + text
 		}
+		path := basePath
+		for n := 2; seenPaths[path]; n++ {
+			path = fmt.Sprintf("%s [%d]", basePath, n)
+		}
+		seenPaths[path] = true
 		h := Heading{Level: level, Text: text, Path: path, Line: lineNo}
 		d.heads = append(d.heads, headRec{h: h, start: lineStart})
 		ancestors = append(ancestors, h)
@@ -133,10 +139,24 @@ func Parse(src []byte) (*Doc, error) {
 	return d, nil
 }
 
-// isFence reports whether a line opens or closes a fenced code block.
-func isFence(line string) bool {
-	s := strings.TrimLeft(line, " ")
-	return strings.HasPrefix(s, "```") || strings.HasPrefix(s, "~~~")
+// fence returns the marker, width, and remaining text of a fence line.
+func fence(line string) (byte, int, string, bool) {
+	indent := len(line) - len(strings.TrimLeft(line, " "))
+	if indent > 3 {
+		return 0, 0, "", false
+	}
+	s := line[indent:]
+	if len(s) < 3 || (s[0] != '`' && s[0] != '~') {
+		return 0, 0, "", false
+	}
+	width := 0
+	for width < len(s) && s[width] == s[0] {
+		width++
+	}
+	if width < 3 {
+		return 0, 0, "", false
+	}
+	return s[0], width, s[width:], true
 }
 
 // atxHeading parses an ATX heading line, returning its level (1..6) and text. The

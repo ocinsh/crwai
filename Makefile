@@ -21,8 +21,8 @@ build: ## Compile the binary into dist/
 	go build -o $(DISTDIR)/$(BIN) $(PKG)
 
 .PHONY: install
-install: ## Install the binary into $GOBIN / $GOPATH/bin
-	go install $(PKG)
+install: build ## Configure detected MCP clients with the built binary
+	./$(DISTDIR)/$(BIN) install
 
 .PHONY: run
 run: ## Run the MCP server over stdio (the default, no-subcommand action)
@@ -33,7 +33,7 @@ test: ## Run the test suite
 	go test ./...
 
 .PHONY: check
-check: ## Run everything CI runs: format check, vet, tests, and the language harnesses
+check: ## Run format check, vet, tests, and the language harnesses
 	@test -z "$$(gofmt -l .)" || { echo "gofmt: these files need formatting:"; gofmt -l .; exit 1; }
 	go vet ./...
 	go test ./...

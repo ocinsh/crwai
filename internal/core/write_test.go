@@ -239,6 +239,28 @@ func TestApplyResolvedPreservesFileMode(t *testing.T) {
 	}
 }
 
+// TestBatchWriteThroughSymlink keeps the link intact and updates its target.
+func TestBatchWriteThroughSymlink(t *testing.T) {
+	target := fixture(t)
+	link := filepath.Join(filepath.Dir(target), "link.go")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	res, err := core.BatchWrite(golang.Go{}, link, []core.Edit{
+		edit("Add", "func Add(a, b int) int { return 42 }"),
+	})
+	if err != nil || !res.Applied {
+		t.Fatalf("BatchWrite through symlink: result=%+v err=%v", res, err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("link was replaced: info=%v err=%v", info, err)
+	}
+	if got := mustRead(t, target); !strings.Contains(got, "return 42") {
+		t.Fatalf("target was not updated:\n%s", got)
+	}
+}
+
 // TestBatchWriteLeavesNoTempFiles guards the atomic write's cleanup: a rejected
 // batch must not leave its scratch file behind in the target's directory.
 func TestBatchWriteLeavesNoTempFiles(t *testing.T) {

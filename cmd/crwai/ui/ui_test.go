@@ -145,7 +145,7 @@ func TestNoEmojiInRenderedOutput(t *testing.T) {
 		WriteResult(crwai.WriteResult{Path: "f.go", Applied: true, Edits: []crwai.EditOutcome{
 			{Target: crwai.SymbolID{Kind: crwai.KindFunc, Name: "F"}, OK: true},
 		}}),
-		Version("crwai", "0.1.0"),
+		Version("crwai", "v0.1.0"),
 	}
 	for _, out := range rendered {
 		for _, r := range out {

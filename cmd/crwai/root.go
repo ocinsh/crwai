@@ -87,6 +87,7 @@ func newRoot() *cobra.Command {
 	)
 	add(groupTool,
 		newWriteCmd(), newServeCmd(), newLangsCmd(), newVersionCmd(),
+		newInstallCmd(), newCheckUpdateCmd(), newUpdateCmd(),
 	)
 	return root
 }

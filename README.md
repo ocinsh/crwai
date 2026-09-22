@@ -43,7 +43,8 @@ syntax breaks. It never generates code.
   once, all N applied in memory, written once.
 - **All-or-nothing:** if any edit breaks the final parse, the whole batch is
   rejected and the disk is untouched. An empty batch is rejected too, so a no-op
-  never rewrites a file.
+  never rewrites a file. Writing through a symlink updates its target and keeps
+  the symlink intact.
 - **Symbol identity:** symbols are addressed by `SymbolID` (kind + name +
   container), never by file offset. The read and write paths derive that identity
   the same way: a container with no kind means a method.
@@ -148,6 +149,8 @@ are deliberately **unrelated to the `Language` contract**.
   section read by heading path, and a section rewrite resolved for the shared
   atomic write path. Parsed with a line-oriented block scan, no CGO and no
   tree-sitter: a heading is a `#` line outside a fenced code block, and a section
+  path that repeats receives a numeric suffix such as `Guide/Notes [2]`. The
+  scanner requires a closing fence to match the opening marker and width. A section
   spans down to the next heading of equal-or-shallower level. Read and write are
   symmetric — writing a section back exactly as it was read leaves the file
   byte-identical, and a replacement keeps the document's blank-line spacing instead
@@ -165,6 +168,10 @@ Both are exposed through the public facade (`DocReader` / `DocWriter` /
 `section`, `requests` and `request` CLI commands.
 
 ## Usage
+
+For a project-scoped Codex MCP setup, follow
+[`docs/install-codex.md`](docs/install-codex.md). The repository includes
+`.codex/config.toml`; build `dist/crwai` before starting Codex.
 
 With **no subcommand** the binary speaks MCP over stdio (so an MCP client can
 launch it directly). Every capability is also a one-word subcommand with a short
@@ -193,7 +200,22 @@ crwai write <file> -n <name> [-k <kind>] [-c <container>] -t <text>   # alias: w
 crwai write <file.md> --heading <path> --from <file>                  # a section
 
 crwai version              # product version (alias: ver)
+crwai install              # choose detected MCP clients and link this executable
+crwai check-update         # compare this version with the latest GitHub release
+crwai update               # install the latest published release over this binary
+crwai update --to v1.2.3   # install a specific published release
 ```
+
+`install` detects the Codex and Claude Code CLIs and asks whether to configure
+each one. An existing crwai entry can be replaced after confirmation. The MCP
+entry points to the resolved path of the executable running the wizard; no copy
+is made. Keep that executable in place. From source, `make install` builds the
+binary and runs this command. `check-update` and `update` use
+GitHub Releases; updates verify the published SHA-256 checksum before replacing
+the running binary. An update needs write access to the directory containing
+that binary. The update commands become usable after the first release is
+published. See [`docs/releases.md`](docs/releases.md) for packaging and release
+instructions.
 
 Three persistent flags apply to every command:
 
@@ -241,7 +263,7 @@ $ crwai sig internal/core/version.go
 internal/core/version.go
 go, 2 symbols
 ├─ const  const Name = "crwai"
-└─ const  const Version = "0.1.0"
+└─ const  const Version = "v0.1.0"
 ```
 
 There are **no emoji** anywhere in the CLI. The kind of a symbol is a word in the
@@ -336,8 +358,9 @@ Building requires a C toolchain — never `CGO_ENABLED=0`.
 
 ### Verification
 
-`make check` runs everything CI runs: the gofmt check, `go vet`, the Go test
-suite, and all nine language harnesses. CI runs the same on Linux and macOS
+`make check` runs the gofmt check, `go vet`, the Go test suite, and all nine
+language harnesses. CI also runs `make build` and checks that `go.mod` and
+`go.sum` remain unchanged. CI runs on Linux and macOS
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 The Go suite covers the write pipeline directly (`internal/core/write_test.go`:
@@ -414,10 +437,11 @@ internal/core/                  shared types + small interfaces + the write pipe
 internal/mcptool/               tool decorator layer (descriptors, schemas, registration)
 internal/lang/                  per-language subpackages + registry + TEMPLATE.md
 internal/common/                common-file tools (markdown, postman); not Language-bound
+internal/release/               GitHub release lookup, package verification, binary replacement
 cmd/crwai/                      CLI + MCP server front-ends (cobra commands, stdio)
 cmd/crwai/ui/                   terminal presentation layer (lipgloss, tree rendering)
 examples/                       deterministic fixtures, one directory per language/format
-.github/workflows/              CI: build, vet, gofmt, tests and harnesses on Linux + macOS
+.github/workflows/              CI and tagged release jobs for Linux and macOS
 ```
 
 The dependency direction is one-way: `cmd/crwai` (and its `ui`) depend on the
